@@ -74,25 +74,37 @@ def contrastive_online(args):
 
 
 def rank_trajectories(traces, method):
+    import numpy as np
     for t in traces:
-        for i in range(len(t.states)):
-            contra_states = t.contrastive[i].states
-            max_trace_state = len(t.states) - 1
+        n_states = len(t.states)
+        n_contrastive = len(t.contrastive) if hasattr(t, "contrastive") else 0
+        # only iterate indices that have a contrastive trajectory
+        limit = min(n_states, n_contrastive)
+        for i in range(limit):
+            contra = t.contrastive[i]
+            if not getattr(contra, "states", None):
+                # nothing to rank for this contrastive entry
+                continue
+            contra_states = contra.states
+            max_trace_state = n_states - 1
             max_contrastive_state = contra_states[-1].id[1]
             end_state = min(i + t.k_steps, max_trace_state, max_contrastive_state)
-            t.contrastive[i].traj_end_state = end_state
+            contra.traj_end_state = end_state
+
             if method == "lastState":
                 state1 = t.states[end_state]
-                state2 = [x for x in contra_states if x.id[1] == end_state][0]
-                """the value of the state is defined by the best available action from it"""
-                t.contrastive[i].importance = abs(
-                    max(state1.observed_actions) - max(state2.observed_actions))
+                # find matching state in contrastive trajectory
+                state2 = next((x for x in contra_states if x.id[1] == end_state), None)
+                if state2 is None:
+                    contra.importance = 0
+                    continue
+                contra.importance = abs(max(state1.observed_actions) - max(state2.observed_actions))
             elif "highlights" in method:
-                # defined by second-best importance
+                # defined by second-best importance (original logic preserved)
                 action_values = t.states[i].observed_actions
                 compared_action = np.min(action_values) if "worst" in method else \
                     np.partition(action_values.flatten(), -2)[-2]
-                t.contrastive[i].importance = np.max(action_values) - compared_action
+                contra.importance = np.max(action_values) - compared_action
 
 
 def get_top_k_diverse(traces, args):
