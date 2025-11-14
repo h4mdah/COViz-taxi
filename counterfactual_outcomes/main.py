@@ -1,8 +1,11 @@
 from collections import defaultdict
+import re
 
 import json
 import numpy as np
 import random
+import os
+import time
 from datetime import datetime
 from os import makedirs, getpid
 from os.path import join, abspath
@@ -16,9 +19,11 @@ from counterfactual_outcomes.get_agent import get_config, get_agent
 
 
 def output_and_metadata(args):
-    log_name = 'run_{}_{}'.format(datetime.now().strftime("%Y-%m-%d_%H:%M:%S"), getpid())
-    args.output_dir = join(abspath('results'), log_name)
-    makedirs(args.output_dir)
+    # create a Windows-safe run id (no ':' characters) and make output dir once
+    run_ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    run_name = f"run_{run_ts}_{getpid()}"
+    args.output_dir = join(abspath('results'), run_name)
+    os.makedirs(args.output_dir, exist_ok=True)
     with Path(join(args.output_dir, 'metadata.json')).open('w') as f:
         json.dump(vars(args), f, sort_keys=True, indent=4)
 
@@ -44,8 +49,27 @@ def contrastive_online(args):
         env2.close()
         evaluation1.close()
         evaluation2.close()
+    elif args.interface == "Taxi":
+        # Taxi uses the taxi_interface implementation; treat similar to Highway:
+        env1, agent1 = get_agent(args)
+        evaluation1 = agent1.interface.evaluation(env1, agent1)
+        env2, agent2 = get_agent(args)
+        evaluation2 = agent2.interface.evaluation(env2, agent2)
+        env1.args = args
+        env2.args = args
+        if args.multi_head:
+            traces = online_comparison_RD(env1, agent1, env2, agent2, args,
+                                          evaluation1=evaluation1,
+                                          evaluation2=evaluation2)
+        else:
+            traces = online_comparison(env1, agent1, env2, agent2, args,
+                                       evaluation1=evaluation1, evaluation2=evaluation2)
+        env1.close()
+        env2.close()
+        evaluation1.close()
+        evaluation2.close()
     else:
-        NotImplementedError
+        raise NotImplementedError(f"Interface '{args.interface}' not implemented")
     return traces
 
 

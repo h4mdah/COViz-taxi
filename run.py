@@ -1,5 +1,6 @@
 from os.path import abspath
 import json
+from pathlib import Path
 
 import argparse
 
@@ -29,7 +30,12 @@ if __name__ == '__main__':
     parser.add_argument('--num_highlights', type=int, default=5)
     args = parser.parse_args()
 
-    config = load_config("COViz/config.json")
+    # load config.json from the repository root (same folder as run.py)
+    repo_root = Path(__file__).resolve().parent
+    config_file = repo_root / "config.json"
+    if not config_file.exists():
+        raise FileNotFoundError(f"config.json not found at {config_file}")
+    config = load_config(str(config_file))
     for key, value in config.items():
         if getattr(args, key.replace('-', '_'), None) is None:
             setattr(args, key.replace('-', '_'), value)

@@ -1,5 +1,5 @@
 {
-    "traces_path": null,
+    "traces_path": "traces",
     "n_traces": 3,
     "state_importance": "second",
     "verbose": true,
@@ -19,5 +19,6 @@
     "contra_action_counter": 1,
     "min_traj_len": 10,
     "no_mark": true,
-    "multi_head": true
+    "multi_head": true,
+    "model_dir": "agents/taxi_sb3"
 }

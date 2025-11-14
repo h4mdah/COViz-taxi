@@ -20,6 +20,8 @@ class Trace(object):
         self.reward_sum = 0
         self.length = 0
         self.states = []
+        # list of ContrastiveTrajectory objects (filled by contrastive_online)
+        self.contrastive = []
         self.trace_idx = idx
         self.k_steps = k_steps
 

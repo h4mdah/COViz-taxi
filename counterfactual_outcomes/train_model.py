@@ -22,6 +22,9 @@ except Exception:
 from stable_baselines3 import DQN
 import numpy as np
 
+# import Trace/State helpers to produce Traces.pkl compatible with the rest of the library
+from counterfactual_outcomes.common import Trace, State, save_traces, load_traces
+
 def safe_reset(env):
     r = env.reset()
     return r[0] if isinstance(r, tuple) else r
@@ -35,22 +38,52 @@ def safe_step(env, action):
     obs, reward, done, info = r
     return obs, float(reward), done, info
 
-def eval_and_collect_traces(model, env_id, n_episodes):
+def render_frame(env):
+    # try common render signatures
+    try:
+        # gymnasium may require mode arg in older versions, newer may accept no args
+        frm = env.render()
+        if frm is None:
+            frm = env.render(mode='rgb_array')
+        return frm
+    except Exception:
+        try:
+            return env.render(mode='rgb_array')
+        except Exception:
+            return None
+
+def one_hot_action(action, n_actions):
+    vec = [0] * n_actions
+    try:
+        vec[int(action)] = 1
+    except Exception:
+        pass
+    return vec
+
+def eval_and_collect_traces(model, env_id, n_episodes, k_steps=10):
     env = gym.make(env_id)
     traces = []
-    for _ in range(n_episodes):
+    for ti in range(n_episodes):
         obs = safe_reset(env)
         done = False
-        trace = {"observations": [], "actions": [], "rewards": [], "dones": []}
+        trace = Trace(idx=ti, k_steps=k_steps)
+        step_idx = 0
         while not done:
             action, _ = model.predict(obs, deterministic=True)
+            # capture frame before taking the action (state at current timestep)
+            img = render_frame(env)
+            action_int = int(action)
+            # create State for current timestep
+            n_actions = getattr(env.action_space, "n", None) or 0
+            action_vector = one_hot_action(action_int, n_actions) if n_actions else []
+            state_obj = State(id=(ti, step_idx), obs=obs, state=obs,
+                              action_vector=action_vector, img=img, features=None)
+            # perform step
             next_obs, reward, done, info = safe_step(env, action)
-            # Taxi observations are typically integers; ensure JSON-serializable
-            trace["observations"].append(int(obs) if np.isscalar(obs) else (np.array(obs).tolist()))
-            trace["actions"].append(int(action))
-            trace["rewards"].append(float(reward))
-            trace["dones"].append(bool(done))
+            # update Trace with same signature as common.Trace.update(obs, r, done, infos, a, state_id)
+            trace.update(obs=obs, r=reward, done=done, infos=info, a=action_int, state_id=state_obj)
             obs = next_obs
+            step_idx += 1
         traces.append(trace)
     env.close()
     return traces
@@ -63,27 +96,29 @@ def main(
     eval_interval=10_000,
     save_model_interval=20_000,
     out_traces_file="traces/taxi_traces.json",
-    model_dir="agents/taxi_sb3"
+    model_dir="agents/taxi_sb3",
+    k_steps=10
 ):
     repo = Path(REPO_ROOT)
     out_traces_path = repo / out_traces_file
-    (repo / out_traces_path.parent).mkdir(parents=True, exist_ok=True)
+    traces_dir = repo / out_traces_path.parent
+    traces_dir.mkdir(parents=True, exist_ok=True)
     model_path_dir = repo / model_dir
     model_path_dir.mkdir(parents=True, exist_ok=True)
+
+    # if an existing Traces.pkl is present, load to append
+    existing_traces = []
+    try:
+        existing_traces = load_traces(str(traces_dir))
+    except Exception:
+        existing_traces = []
 
     # create training env
     train_env = gym.make(env_id)
 
     model = DQN("MlpPolicy", train_env, verbose=1)
     accumulated_timesteps = 0
-    all_traces = []
-    # if existing traces file present, load to append
-    if out_traces_path.exists():
-        try:
-            with open(out_traces_path, "r") as f:
-                all_traces = json.load(f)
-        except Exception:
-            all_traces = []
+    # if existing model artifacts in model_dir you'd like to load, add logic here
 
     while accumulated_timesteps < total_timesteps:
         to_learn = min(learn_chunk, total_timesteps - accumulated_timesteps)
@@ -91,13 +126,28 @@ def main(
         accumulated_timesteps += to_learn
         print(f"[{time.strftime('%H:%M:%S')}] Learned {accumulated_timesteps}/{total_timesteps} timesteps")
 
-        # periodic evaluation & trace collection
+        # periodic evaluation & trace collection (produces Trace objects compatible with common.Trace)
         if accumulated_timesteps % eval_interval == 0 or accumulated_timesteps == total_timesteps:
-            traces = eval_and_collect_traces(model, env_id, eval_episodes)
-            all_traces.extend(traces)
-            with open(out_traces_path, "w") as f:
-                json.dump(all_traces, f)
-            print(f"[{time.strftime('%H:%M:%S')}] Collected {len(traces)} eval traces -> {out_traces_path}")
+            new_traces = eval_and_collect_traces(model, env_id, eval_episodes, k_steps=k_steps)
+            # if loaded existing traces were plain lists/other, attempt to concatenate
+            combined_traces = []
+            if existing_traces:
+                combined_traces.extend(existing_traces)
+            combined_traces.extend(new_traces)
+            # save as Traces.pkl so the contrastive pipeline can load them
+            save_traces(combined_traces, str(traces_dir))
+            # also write a small JSON summary for human inspection (optional)
+            try:
+                summary = []
+                for t in new_traces:
+                    summary.append({"trace_idx": t.trace_idx, "length": t.length, "reward_sum": t.reward_sum})
+                with open(traces_dir / "taxi_traces_summary.json", "w") as f:
+                    json.dump(summary, f)
+            except Exception:
+                pass
+
+            existing_traces = combined_traces
+            print(f"[{time.strftime('%H:%M:%S')}] Collected {len(new_traces)} eval traces -> {traces_dir / 'Traces.pkl'}")
 
         # periodic model save
         if accumulated_timesteps % save_model_interval == 0 or accumulated_timesteps == total_timesteps:
@@ -110,7 +160,7 @@ def main(
     final_model = model_path_dir / "model_final.zip"
     model.save(str(final_model))
     print(f"Training finished. Final model saved to {final_model}")
-    print(f"Total traces saved: {len(all_traces)} at {out_traces_path}")
+    print(f"Total traces saved: {len(existing_traces)} at {traces_dir / 'Traces.pkl'}")
 
 if __name__ == "__main__":
     main()
