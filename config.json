@@ -1,0 +1,23 @@
+{
+    "traces_path": null,
+    "n_traces": 3,
+    "state_importance": "second",
+    "verbose": true,
+    "k_steps": 5,
+    "overlay": 3,
+    "minimum_gap": 0,
+    "randomized": false,
+    "fps": 3,
+    "fade_duration": 2,
+    "agent_interface": "Taxi",
+    "importance_method": "lastState",
+    "highlights_div": false,
+    "div_coefficient": 2,
+    "num_highlights": 5,
+    "interface": "Taxi",
+    "pause": 3,
+    "contra_action_counter": 1,
+    "min_traj_len": 10,
+    "no_mark": true,
+    "multi_head": true
+}
