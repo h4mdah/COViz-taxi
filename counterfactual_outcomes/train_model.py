@@ -21,6 +21,27 @@ except Exception:
 
 from stable_baselines3 import DQN
 import numpy as np
+try:
+    from PIL import Image, ImageDraw, ImageFont
+except Exception:
+    Image = ImageDraw = ImageFont = None
+
+def create_obs_image(obs, size=(84, 84)):
+    """Fallback: render a small image with the obs text if env.render returns None."""
+    try:
+        if Image is None:
+            return None
+        img = Image.new('RGB', size, color='white')
+        draw = ImageDraw.Draw(img)
+        txt = str(obs)
+        try:
+            font = ImageFont.load_default()
+        except Exception:
+            font = None
+        draw.text((4, 4), txt, fill='black', font=font)
+        return np.array(img)
+    except Exception:
+        return None
 
 # import Trace/State helpers to produce Traces.pkl compatible with the rest of the library
 from counterfactual_outcomes.common import Trace, State, save_traces, load_traces
@@ -39,11 +60,12 @@ def safe_step(env, action):
     return obs, float(reward), done, info
 
 def render_frame(env):
-    # try common render signatures
+    # try common render signatures and return an RGB array (or None)
     try:
-        # gymnasium may require mode arg in older versions, newer may accept no args
+        # gymnasium/gym may accept no args if env created with render_mode='rgb_array'
         frm = env.render()
         if frm is None:
+            # fallback to explicit mode argument
             frm = env.render(mode='rgb_array')
         return frm
     except Exception:
@@ -61,7 +83,11 @@ def one_hot_action(action, n_actions):
     return vec
 
 def eval_and_collect_traces(model, env_id, n_episodes, k_steps=10):
-    env = gym.make(env_id)
+    # try to request RGB rendering at creation if supported
+    try:
+        env = gym.make(env_id, render_mode='rgb_array')
+    except Exception:
+        env = gym.make(env_id)
     traces = []
     for ti in range(n_episodes):
         obs = safe_reset(env)
@@ -72,6 +98,9 @@ def eval_and_collect_traces(model, env_id, n_episodes, k_steps=10):
             action, _ = model.predict(obs, deterministic=True)
             # capture frame before taking the action (state at current timestep)
             img = render_frame(env)
+            if img is None:
+                # fallback image built from the observation so downstream code always has an image
+                img = create_obs_image(obs)
             action_int = int(action)
             # create State for current timestep
             n_actions = getattr(env.action_space, "n", None) or 0

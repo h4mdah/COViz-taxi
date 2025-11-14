@@ -44,12 +44,14 @@ class Trace(object):
 
 class State(object):
     def __init__(self, id, obs, state, action_vector, img, features):
-        self.observation = obs
-        self.image = img
-        self.observed_actions = action_vector
         self.id = id
-        self.features = features
+        self.obs = obs
         self.state = state
+        self.action_vector = action_vector
+        # ensure both attribute names exist
+        self.img = img
+        self.image = img
+        self.features = features
 
     def plot_image(self):
         plt.imshow(self.image)
