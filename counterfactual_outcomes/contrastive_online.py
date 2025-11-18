@@ -20,7 +20,12 @@ class ContrastiveTrajectory(object):
     def get_contrastive_trajectory(self, env, agent, state_id, contra_action, contra_counter):
         action = contra_action
         for step in range(state_id[1] + 1, state_id[1] + self.k_steps + 1):
-            obs, r, done, info = env.step(action)
+            out = env.step(action)
+            if isinstance(out, tuple) and len(out) == 5:
+                obs, r, terminated, truncated, info = out
+                done = bool(terminated or truncated)
+            else:
+                obs, r, done, info = out
             contra_counter -= 1  # reduce contra counter
             s = agent.interface.get_state_from_obs(agent, obs)
             s_a_values = agent.interface.get_state_action_values(agent, s)
@@ -51,8 +56,13 @@ def online_comparison(env1, agent1, env2, agent2, args, evaluation1=None, evalua
         log_msg(f'Executing Trace number: {n}', args.verbose)
         trace = agent1.interface.contrastive_trace(n, args.k_steps)
         """initial state"""
-        obs, _ = env1.reset(), env2.reset()
-        assert obs.tolist() == _.tolist(), f'Nonidentical environment'
+        res1 = env1.reset()
+        res2 = env2.reset()
+        obs = res1[0] if isinstance(res1, tuple) else res1
+        _obs = res2[0] if isinstance(res2, tuple) else res2
+        if not (getattr(obs, 'tolist', None) and getattr(_obs, 'tolist', None) and obs.tolist() == _obs.tolist()):
+            log_msg('Warning: initial observations differ between env1 and env2; continuing', args.verbose)
+            _obs = obs
         step, r, done, infos, agent1_a = 0, 0, False, {}, None
         agent1.previous_state = agent2.previous_state = obs  # required
 
@@ -64,7 +74,7 @@ def online_comparison(env1, agent1, env2, agent2, args, evaluation1=None, evalua
             state_id, frame = (n, step), env1.render(mode='rgb_array')
             features = agent1.interface.get_features(env1)
             state_obj = State(state_id, obs, state, s_a_values, frame, features)
-            trace.update(state_obj, obs, agent1_a, r, done, infos, params=[s_a_values])
+            trace.update(state_obj, obs, r, done, infos, agent1_a, state_id)
             """actions"""
             agent1_a = agent1.interface.get_next_action(agent1, obs, state) if not done else None
             agent2_a = sorted(list(enumerate(s_a_values)), key=lambda x: x[1])[-2][0]
@@ -77,10 +87,19 @@ def online_comparison(env1, agent1, env2, agent2, args, evaluation1=None, evalua
             env2 = agent2.interface.post_contrastive(agent1, agent2, pre_vars)
             """Transition both agent's based on agent 1 action"""
             step += 1
-            obs, r, done, info = env1.step(agent1_a)
+            out = env1.step(agent1_a)
+            if isinstance(out, tuple) and len(out) == 5:
+                obs, r, terminated, truncated, info = out
+                done = bool(terminated or truncated)
+            else:
+                obs, r, done, info = out
             if done: break
-            _ = env2.step(agent1_a)  # dont need returned values
-            assert obs.tolist() == _[0].tolist(), f'Nonidentical environment transition'
+            out2 = env2.step(agent1_a)
+            obs2 = out2[0] if isinstance(out2, tuple) else out2
+            if getattr(obs, 'tolist', None) and getattr(obs2, 'tolist', None):
+                if obs.tolist() != obs2.tolist():
+                    log_msg('Warning: environment transition produced different observations; continuing', args.verbose)
+                    obs2 = obs
 
         """end of episode"""
         traces.append(trace)

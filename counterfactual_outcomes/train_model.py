@@ -12,7 +12,7 @@ for p in (str(REPO_ROOT), str(Path.cwd())):
 
 # ensure the custom Taxi env is registered
 import counterfactual_outcomes.interfaces.Taxi.environments  # registers 'Taxi-v3-COViz'
-import counterfactual_outcomes.interfaces.Highway.environments
+#import counterfactual_outcomes.interfaces.Highway.environments
 # gym fallback between gymnasium and gym
 try:
     import gymnasium as gym

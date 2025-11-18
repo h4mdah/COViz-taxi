@@ -160,6 +160,13 @@ def main(args):
 
     """get traces"""
     traces = load_traces(args.traces_path) if args.traces_path else contrastive_online(args)
+
+    # quick inspect (short)
+    import pprint
+    print("num_traces =", len(traces))
+    pprint.pprint({k: type(v) for k, v in vars(traces[0]).items()})
+    pprint.pprint({k: type(v) for k, v in vars(traces[0].states[0]).items()})
+
     log_msg(f'Obtained traces', args.verbose)
 
     """save traces"""
