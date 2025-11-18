@@ -1,3 +1,4 @@
+import logging
 from counterfactual_outcomes.common import log_msg
 from counterfactual_outcomes.common import State
 
@@ -68,7 +69,7 @@ def online_comparison(env1, agent1, env2, agent2, args, evaluation1=None, evalua
 
         # for _ in range(30):  # TODO remove
         while not done:
-            log_msg(f'\ttime-step number: {step}', args.verbose)
+            logging.debug(f'time-step number: {step}')
             state = agent1.interface.get_state_from_obs(agent1, obs, [r, done])
             s_a_values = agent1.interface.get_state_action_values(agent1, state)
             state_id, frame = (n, step), env1.render(mode='rgb_array')

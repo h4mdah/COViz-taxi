@@ -17,6 +17,7 @@ from datetime import datetime
 from os import makedirs, getpid
 from os.path import join, abspath
 from pathlib import Path
+import pickle
 
 from counterfactual_outcomes.common import save_traces, log_msg, load_traces, \
     get_highlight_traj_indxs, save_highlights, save_frames
@@ -105,10 +106,18 @@ def rank_trajectories(traces, method):
                 if state2 is None:
                     contra.importance = 0
                     continue
-                contra.importance = abs(max(state1.observed_actions) - max(state2.observed_actions))
+                # Use action_vector (existing attribute) as the action/value estimates
+                av1 = getattr(state1, 'action_vector', None)
+                av2 = getattr(state2, 'action_vector', None)
+                val1 = np.max(np.asarray(av1)) if av1 is not None else 0
+                val2 = np.max(np.asarray(av2)) if av2 is not None else 0
+                contra.importance = abs(val1 - val2)
             elif "highlights" in method:
                 # defined by second-best importance (original logic preserved)
-                action_values = t.states[i].observed_actions
+                action_values = np.asarray(getattr(t.states[i], 'action_vector', np.zeros(1)))
+                if action_values.size == 0:
+                    contra.importance = 0
+                    continue
                 compared_action = np.min(action_values) if "worst" in method else \
                     np.partition(action_values.flatten(), -2)[-2]
                 contra.importance = np.max(action_values) - compared_action
@@ -162,10 +171,10 @@ def main(args):
     traces = load_traces(args.traces_path) if args.traces_path else contrastive_online(args)
 
     # quick inspect (short)
-    import pprint
-    print("num_traces =", len(traces))
-    pprint.pprint({k: type(v) for k, v in vars(traces[0]).items()})
-    pprint.pprint({k: type(v) for k, v in vars(traces[0].states[0]).items()})
+    # import pprint
+    # print("num_traces =", len(traces))
+    # pprint.pprint({k: type(v) for k, v in vars(traces[0]).items()})
+    # pprint.pprint({k: type(v) for k, v in vars(traces[0].states[0]).items()})
 
     log_msg(f'Obtained traces', args.verbose)
 

@@ -149,5 +149,5 @@ def save_image(path, name, img):
 
 
 def log_msg(msg, verbose=True):
+
     logging.info(msg)
-    if verbose: print(msg)

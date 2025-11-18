@@ -1,4 +1,5 @@
 from os.path import abspath
+import logging
 
 from counterfactual_outcomes.common import log_msg, save_traces
 from counterfactual_outcomes.common import State
@@ -30,7 +31,7 @@ def online_comparison_RD(env1, agent1, env2, agent2, args, evaluation1=None, eva
 
         # for _ in range(30):  # TODO remove
         while not done:
-            log_msg(f'\ttime-step number: {step}', args.verbose)
+            logging.debug(f'time-step number: {step}')
             state = agent1.interface.get_state_from_obs(agent1, obs, [r, done])
             s_a_values = agent1.interface.get_state_action_values(agent1, state)
             rd_vals.append(agent1.interface.get_state_RD_action_values(agent1, state))

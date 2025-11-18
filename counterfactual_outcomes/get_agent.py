@@ -79,7 +79,7 @@ def get_config(load_path, filename, changes=None):
         if agent_meta:
             with open(agent_meta[0], 'r', encoding='utf-8') as f:
                 config = json.load(f)
-
+    print("path", load_path)
     if config is None:
         raise FileNotFoundError(f"Could not find a config containing '{filename}' at '{load_path}' and no fallback metadata found.")
 
