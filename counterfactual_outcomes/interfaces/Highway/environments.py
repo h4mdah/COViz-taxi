@@ -1,9 +1,10 @@
 import numpy as np
 
-from highway_env.envs import HighwayEnv, Action
-from gym.envs.registration import register
+from highway_env.envs import HighwayEnv
+from gymnasium.envs.registration import register
 from highway_env.utils import lmap
 from highway_env.vehicle.controller import ControlledVehicle
+from highway_env.envs.common.action import Action
 
 
 class Plain(HighwayEnv):

@@ -1,7 +1,7 @@
 import gymnasium as gym
 from gymnasium.envs.registration import register
 from typing import Dict, Any, Union
-from gym import Env
+from gymnasium import Env
 
 class TaxiEnvWrapper(Env):
     """Wrapper to expose the Gymnasium new API for Taxi-v3."""

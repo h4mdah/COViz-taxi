@@ -8,7 +8,7 @@ import argparse
 from os.path import abspath, join
 from pathlib import Path
 
-import gym
+import gymnasium as gym
 
 from counterfactual_outcomes.common import Trace
 from rl_agents.agents.common.exploration.abstract import exploration_factory

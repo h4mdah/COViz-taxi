@@ -12,7 +12,7 @@ for p in (str(REPO_ROOT), str(Path.cwd())):
 
 # ensure the custom Taxi env is registered
 import counterfactual_outcomes.interfaces.Taxi.environments  # registers 'Taxi-v3-COViz'
-
+import counterfactual_outcomes.interfaces.Highway.environments
 # gym fallback between gymnasium and gym
 try:
     import gymnasium as gym
@@ -124,7 +124,7 @@ def main(
     eval_episodes=5,
     eval_interval=10_000,
     save_model_interval=20_000,
-    out_traces_file="traces/taxi_traces.json",
+    out_traces_file="traces/taxi/taxi_traces.json",
     model_dir="agents/taxi_sb3",
     k_steps=10
 ):
@@ -193,3 +193,4 @@ def main(
 
 if __name__ == "__main__":
     main()
+    #main(env_id='Plain-v0', total_timesteps=15000, out_traces_file='traces/highway/highway_traces.pkl', model_dir='agents/highway_sb3')
