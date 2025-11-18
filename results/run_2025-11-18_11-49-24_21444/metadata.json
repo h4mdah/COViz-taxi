@@ -1,0 +1,35 @@
+{
+    "agent_interface": "Highway",
+    "config_changes": {
+        "agent": {},
+        "env": {
+            "id": "Taxi-v3-COViz"
+        }
+    },
+    "config_filename": "metadata",
+    "contra_action_counter": 0,
+    "data_name": "",
+    "div_coefficient": 2,
+    "fade_duration": 2,
+    "fps": 3,
+    "highlights_div": false,
+    "importance_method": "lastState",
+    "interface": "Taxi",
+    "k_steps": 15,
+    "load_path": "C:\\Users\\hmari\\Desktop\\THI_KI\\S5\\agents\\Taxi\\taxi_optimal",
+    "min_traj_len": 1,
+    "minimum_gap": 0,
+    "model_dir": "agents/taxi_sb3",
+    "multi_head": true,
+    "n_traces": 10,
+    "name": "taxi_optimal",
+    "no_mark": true,
+    "num_highlights": 5,
+    "output_dir": "C:\\Users\\hmari\\Desktop\\THI_KI\\S5\\COViz-taxi\\results\\run_2025-11-18_11-49-24_21444",
+    "overlay": 7,
+    "pause": 3,
+    "randomized": false,
+    "state_importance": "second",
+    "traces_path": null,
+    "verbose": true
+}
