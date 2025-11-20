@@ -9,11 +9,10 @@ Traceback (most recent call last):
     evaluation = MyEvaluation(env, agent, display_env=False, output_dir=self.output_dir)
   File "/home/aws_install/COViz-Taxi/counterfactual_outcomes/interfaces/Taxi/taxi_interface.py", line 28, in __init__
     super(MyEvaluation, self).__init__(self.env, agent, num_episodes=num_episodes, 
-  File "/home/aws_install/.local/lib/python3.9/site-packages/rl_agents/trainer/evaluation.py", line 79, in __init__
-    self.wrapped_env = RecordVideo(env,
-  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/site-packages/gymnasium/wrappers/rendering.py", line 264, in __init__
-    gym.Wrapper.__init__(self, env)
-  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/site-packages/gymnasium/core.py", line 313, in __init__
-    assert isinstance(
-AssertionError: Expected env to be a `gymnasium.Env` but got <class 'gym.wrappers.order_enforcing.OrderEnforcing'>
-Exception ignored in: <function RecordVideo.__del__ at 0x7f9bcd2cc8b0>
+  File "/home/aws_install/.local/lib/python3.9/site-packages/rl_agents/trainer/evaluation.py", line 91, in __init__
+    self.write_logging()
+  File "/home/aws_install/.local/lib/python3.9/site-packages/rl_agents/trainer/evaluation.py", line 369, in write_logging
+    rl_agents.trainer.logger.configure()
+  File "/home/aws_install/.local/lib/python3.9/site-packages/rl_agents/trainer/logger.py", line 54, in configure
+    gym.logger.set_level(gym_level)
+AttributeError: module 'gymnasium.logger' has no attribute 'set_level'
