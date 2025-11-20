@@ -1,70 +1,24 @@
 Traceback (most recent call last):
-  File "/home/aws_install/COViz-Taxi/run.py", line 56, in <module>
+  File "/home/aws_install/COViz-Taxi/run.py", line 57, in <module>
     main(args)
   File "/home/aws_install/COViz-Taxi/counterfactual_outcomes/main.py", line 162, in main
     traces = load_traces(args.traces_path) if args.traces_path else contrastive_online(args)
   File "/home/aws_install/COViz-Taxi/counterfactual_outcomes/main.py", line 68, in contrastive_online
     traces = online_comparison_RD(env1, agent1, env2, agent2, args,
-  File "/home/aws_install/COViz-Taxi/counterfactual_outcomes/contrastive_online_RD.py", line 45, in online_comparison_RD
-    pre_vars = agent2.interface.pre_contrastive(env1)
-  File "/home/aws_install/COViz-Taxi/counterfactual_outcomes/interfaces/Taxi/taxi_interface.py", line 182, in pre_contrastive
-    return deepcopy(env)
-  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 172, in deepcopy
-    y = _reconstruct(x, memo, *rv)
-  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 270, in _reconstruct
-    state = deepcopy(state, memo)
-  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 146, in deepcopy
-    y = copier(x, memo)
-  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 230, in _deepcopy_dict
-    y[deepcopy(key, memo)] = deepcopy(value, memo)
-  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 172, in deepcopy
-    y = _reconstruct(x, memo, *rv)
-  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 270, in _reconstruct
-    state = deepcopy(state, memo)
-  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 146, in deepcopy
-    y = copier(x, memo)
-  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 230, in _deepcopy_dict
-    y[deepcopy(key, memo)] = deepcopy(value, memo)
-  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 172, in deepcopy
-    y = _reconstruct(x, memo, *rv)
-  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 270, in _reconstruct
-    state = deepcopy(state, memo)
-  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 146, in deepcopy
-    y = copier(x, memo)
-  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 230, in _deepcopy_dict
-    y[deepcopy(key, memo)] = deepcopy(value, memo)
-  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 172, in deepcopy
-    y = _reconstruct(x, memo, *rv)
-  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 270, in _reconstruct
-    state = deepcopy(state, memo)
-  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 146, in deepcopy
-    y = copier(x, memo)
-  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 230, in _deepcopy_dict
-    y[deepcopy(key, memo)] = deepcopy(value, memo)
-  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 172, in deepcopy
-    y = _reconstruct(x, memo, *rv)
-  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 270, in _reconstruct
-    state = deepcopy(state, memo)
-  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 146, in deepcopy
-    y = copier(x, memo)
-  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 230, in _deepcopy_dict
-    y[deepcopy(key, memo)] = deepcopy(value, memo)
-  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 172, in deepcopy
-    y = _reconstruct(x, memo, *rv)
-  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 270, in _reconstruct
-    state = deepcopy(state, memo)
-  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 146, in deepcopy
-    y = copier(x, memo)
-  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 230, in _deepcopy_dict
-    y[deepcopy(key, memo)] = deepcopy(value, memo)
-  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 172, in deepcopy
-    y = _reconstruct(x, memo, *rv)
-  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 270, in _reconstruct
-    state = deepcopy(state, memo)
-  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 146, in deepcopy
-    y = copier(x, memo)
-  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 230, in _deepcopy_dict
-    y[deepcopy(key, memo)] = deepcopy(value, memo)
-  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 161, in deepcopy
-    rv = reductor(4)
-TypeError: cannot pickle 'pygame.surface.Surface' object
+  File "/home/aws_install/COViz-Taxi/counterfactual_outcomes/contrastive_online_RD.py", line 61, in online_comparison_RD
+    out2 = env2.step(agent1_a)  # dont need returned values beyond obs for comparison
+  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/site-packages/gymnasium/wrappers/common.py", line 393, in step
+    return super().step(action)
+  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/site-packages/gymnasium/core.py", line 327, in step
+    return self.env.step(action)
+  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/site-packages/gymnasium/wrappers/common.py", line 283, in step
+    return env_step_passive_checker(self.env, action)
+  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/site-packages/gymnasium/utils/passive_env_checker.py", line 207, in env_step_passive_checker
+    result = env.step(action)
+  File "/home/aws_install/COViz-Taxi/counterfactual_outcomes/interfaces/Taxi/environments.py", line 32, in step
+    res = self.env.step(action)
+  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/site-packages/gymnasium/wrappers/common.py", line 125, in step
+    observation, reward, terminated, truncated, info = self.env.step(action)
+  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/site-packages/gymnasium/wrappers/common.py", line 392, in step
+    raise ResetNeeded("Cannot call env.step() before calling env.reset()")
+gymnasium.error.ResetNeeded: Cannot call env.step() before calling env.reset()
