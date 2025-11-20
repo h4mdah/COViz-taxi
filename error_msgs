@@ -1,15 +1,70 @@
- File "/home/aws_install/COViz-Taxi/run.py", line 56, in <module>
+Traceback (most recent call last):
+  File "/home/aws_install/COViz-Taxi/run.py", line 56, in <module>
     main(args)
   File "/home/aws_install/COViz-Taxi/counterfactual_outcomes/main.py", line 162, in main
     traces = load_traces(args.traces_path) if args.traces_path else contrastive_online(args)
-  File "/home/aws_install/COViz-Taxi/counterfactual_outcomes/main.py", line 62, in contrastive_online
-    evaluation1 = agent1.interface.evaluation(env1, agent1)
-  File "/home/aws_install/COViz-Taxi/counterfactual_outcomes/interfaces/Taxi/taxi_interface.py", line 142, in evaluation
-    evaluation = MyEvaluation(env, agent, display_env=False, output_dir=self.output_dir)
-  File "/home/aws_install/COViz-Taxi/counterfactual_outcomes/interfaces/Taxi/taxi_interface.py", line 28, in __init__
-    super(MyEvaluation, self).__init__(self.env, agent, num_episodes=num_episodes, 
-  File "/home/aws_install/.local/lib/python3.9/site-packages/rl_agents/trainer/evaluation.py", line 94, in __init__
-    self.best_agent_stats = -np.infty, 0
-  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/site-packages/numpy/__init__.py", line 397, in __getattr__
-    raise AttributeError(
-AttributeError: `np.infty` was removed in the NumPy 2.0 release. Use `np.inf` instead.
+  File "/home/aws_install/COViz-Taxi/counterfactual_outcomes/main.py", line 68, in contrastive_online
+    traces = online_comparison_RD(env1, agent1, env2, agent2, args,
+  File "/home/aws_install/COViz-Taxi/counterfactual_outcomes/contrastive_online_RD.py", line 45, in online_comparison_RD
+    pre_vars = agent2.interface.pre_contrastive(env1)
+  File "/home/aws_install/COViz-Taxi/counterfactual_outcomes/interfaces/Taxi/taxi_interface.py", line 182, in pre_contrastive
+    return deepcopy(env)
+  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 172, in deepcopy
+    y = _reconstruct(x, memo, *rv)
+  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 270, in _reconstruct
+    state = deepcopy(state, memo)
+  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 146, in deepcopy
+    y = copier(x, memo)
+  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 230, in _deepcopy_dict
+    y[deepcopy(key, memo)] = deepcopy(value, memo)
+  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 172, in deepcopy
+    y = _reconstruct(x, memo, *rv)
+  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 270, in _reconstruct
+    state = deepcopy(state, memo)
+  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 146, in deepcopy
+    y = copier(x, memo)
+  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 230, in _deepcopy_dict
+    y[deepcopy(key, memo)] = deepcopy(value, memo)
+  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 172, in deepcopy
+    y = _reconstruct(x, memo, *rv)
+  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 270, in _reconstruct
+    state = deepcopy(state, memo)
+  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 146, in deepcopy
+    y = copier(x, memo)
+  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 230, in _deepcopy_dict
+    y[deepcopy(key, memo)] = deepcopy(value, memo)
+  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 172, in deepcopy
+    y = _reconstruct(x, memo, *rv)
+  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 270, in _reconstruct
+    state = deepcopy(state, memo)
+  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 146, in deepcopy
+    y = copier(x, memo)
+  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 230, in _deepcopy_dict
+    y[deepcopy(key, memo)] = deepcopy(value, memo)
+  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 172, in deepcopy
+    y = _reconstruct(x, memo, *rv)
+  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 270, in _reconstruct
+    state = deepcopy(state, memo)
+  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 146, in deepcopy
+    y = copier(x, memo)
+  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 230, in _deepcopy_dict
+    y[deepcopy(key, memo)] = deepcopy(value, memo)
+  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 172, in deepcopy
+    y = _reconstruct(x, memo, *rv)
+  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 270, in _reconstruct
+    state = deepcopy(state, memo)
+  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 146, in deepcopy
+    y = copier(x, memo)
+  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 230, in _deepcopy_dict
+    y[deepcopy(key, memo)] = deepcopy(value, memo)
+  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 172, in deepcopy
+    y = _reconstruct(x, memo, *rv)
+  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 270, in _reconstruct
+    state = deepcopy(state, memo)
+  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 146, in deepcopy
+    y = copier(x, memo)
+  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 230, in _deepcopy_dict
+    y[deepcopy(key, memo)] = deepcopy(value, memo)
+  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/copy.py", line 161, in deepcopy
+    rv = reductor(4)
+TypeError: cannot pickle 'pygame.surface.Surface' object
