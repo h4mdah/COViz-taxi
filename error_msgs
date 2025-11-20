@@ -1,5 +1,4 @@
-Traceback (most recent call last):
-  File "/home/aws_install/COViz-Taxi/run.py", line 56, in <module>
+ File "/home/aws_install/COViz-Taxi/run.py", line 56, in <module>
     main(args)
   File "/home/aws_install/COViz-Taxi/counterfactual_outcomes/main.py", line 162, in main
     traces = load_traces(args.traces_path) if args.traces_path else contrastive_online(args)
@@ -9,10 +8,8 @@ Traceback (most recent call last):
     evaluation = MyEvaluation(env, agent, display_env=False, output_dir=self.output_dir)
   File "/home/aws_install/COViz-Taxi/counterfactual_outcomes/interfaces/Taxi/taxi_interface.py", line 28, in __init__
     super(MyEvaluation, self).__init__(self.env, agent, num_episodes=num_episodes, 
-  File "/home/aws_install/.local/lib/python3.9/site-packages/rl_agents/trainer/evaluation.py", line 91, in __init__
-    self.write_logging()
-  File "/home/aws_install/.local/lib/python3.9/site-packages/rl_agents/trainer/evaluation.py", line 369, in write_logging
-    rl_agents.trainer.logger.configure()
-  File "/home/aws_install/.local/lib/python3.9/site-packages/rl_agents/trainer/logger.py", line 54, in configure
-    gym.logger.set_level(gym_level)
-AttributeError: module 'gymnasium.logger' has no attribute 'set_level'
+  File "/home/aws_install/.local/lib/python3.9/site-packages/rl_agents/trainer/evaluation.py", line 94, in __init__
+    self.best_agent_stats = -np.infty, 0
+  File "/home/aws_install/miniforge3/envs/coviz/lib/python3.9/site-packages/numpy/__init__.py", line 397, in __getattr__
+    raise AttributeError(
+AttributeError: `np.infty` was removed in the NumPy 2.0 release. Use `np.inf` instead.
