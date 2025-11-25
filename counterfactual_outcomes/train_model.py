@@ -45,6 +45,9 @@ def create_obs_image(obs, size=(84, 84)):
 
 # import Trace/State helpers to produce Traces.pkl compatible with the rest of the library
 from counterfactual_outcomes.common import Trace, State, save_traces, load_traces
+import imageio
+import os
+import shutil
 
 def safe_reset(env):
     r = env.reset()
@@ -89,10 +92,16 @@ def eval_and_collect_traces(model, env_id, n_episodes, k_steps=10):
     except Exception:
         env = gym.make(env_id)
     traces = []
+    # prepare on-disk traces directory so frames can be streamed
+    repo = Path(REPO_ROOT)
+    traces_root = repo / 'traces' / env_id.replace('/', '_')
+    traces_root.mkdir(parents=True, exist_ok=True)
     for ti in range(n_episodes):
         obs = safe_reset(env)
         done = False
         trace = Trace(idx=ti, k_steps=k_steps)
+        trace_dir = traces_root / f"trace_{ti}"
+        trace_dir.mkdir(parents=True, exist_ok=True)
         step_idx = 0
         while not done:
             action, _ = model.predict(obs, deterministic=True)
@@ -101,12 +110,25 @@ def eval_and_collect_traces(model, env_id, n_episodes, k_steps=10):
             if img is None:
                 # fallback image built from the observation so downstream code always has an image
                 img = create_obs_image(obs)
+            # stream frame to disk to keep memory low
+            img_path = None
+            try:
+                if img is not None:
+                    # ensure uint8
+                    arr = img.astype('uint8') if hasattr(img, 'astype') else img
+                    img_name = f"frame_{step_idx:04d}.png"
+                    img_path = trace_dir / img_name
+                    imageio.imwrite(str(img_path), arr)
+            except Exception:
+                img_path = None
             action_int = int(action)
             # create State for current timestep
             n_actions = getattr(env.action_space, "n", None) or 0
             action_vector = one_hot_action(action_int, n_actions) if n_actions else []
             state_obj = State(id=(ti, step_idx), obs=obs, state=obs,
-                              action_vector=action_vector, img=img, features=None)
+                              action_vector=action_vector, img=None, features=None)
+            # attach image_path to the state for lazy loading downstream
+            state_obj.image_path = str(img_path) if img_path is not None else None
             # perform step
             next_obs, reward, done, info = safe_step(env, action)
             # update Trace with same signature as common.Trace.update(obs, r, done, infos, a, state_id)

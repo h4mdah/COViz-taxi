@@ -23,8 +23,9 @@ if __name__ == '__main__':
     parser.add_argument('--randomized', help='randomize trajectories order', default=False)
     parser.add_argument('--fps', help='summary video fps', type=int, default=3)
     parser.add_argument('--fade-duration', help='fade-in fade-out duration', type=int, default=2)
-    parser.add_argument('--agent-interface', help='model-agent interface', default="Highway")
-    parser.add_argument('--importance-method', help='model-agent interface', default="lastState")
+    # defaults set to None so values in `config.json` override when present
+    parser.add_argument('--agent-interface', help='model-agent interface', default=None)
+    parser.add_argument('--importance-method', help='model-agent interface', default=None)
     parser.add_argument('--highlights_div', type=bool, default=False)
     parser.add_argument('--div_coefficient', type=int, default=2)
     parser.add_argument('--num_highlights', type=int, default=5)

@@ -1,5 +1,5 @@
 {
-    "agent_interface": "Highway",
+    "agent_interface": "Taxi",
     "config_changes": {
         "agent": {},
         "env": {
@@ -20,7 +20,7 @@
     "min_traj_len": 1,
     "minimum_gap": 0,
     "model_dir": "agents/taxi_sb3",
-    "multi_head": true,
+    "multi_head": false,
     "n_traces": 10,
     "name": "taxi_optimal",
     "no_mark": true,

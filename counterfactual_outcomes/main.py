@@ -170,6 +170,32 @@ def main(args):
     """get traces"""
     traces = load_traces(args.traces_path) if args.traces_path else contrastive_online(args)
 
+    # Normalize traces: some producers (online_comparison) append a lightweight
+    # summary dict to the in-memory list to avoid holding full traces. Convert
+    # such summaries back into Trace-like objects so downstream code can
+    # access `.states`, `.contrastive`, etc.
+    from counterfactual_outcomes.common import load_trace_from_file, _dict_to_trace
+    normalized = []
+    for t in traces:
+        if isinstance(t, dict):
+            # If this dict is a summary that points to a file, load that trace
+            file_path = t.get('file') or t.get('file_path') or None
+            trace_idx = t.get('trace_idx')
+            if file_path and trace_idx is not None:
+                tr = load_trace_from_file(file_path, trace_idx)
+                if tr is not None:
+                    normalized.append(tr)
+                    continue
+            # If the dict already contains 'states', try converting directly
+            if 'states' in t:
+                normalized.append(_dict_to_trace(t))
+                continue
+            # fallback: keep dict (will likely cause errors later)
+            normalized.append(t)
+        else:
+            normalized.append(t)
+    traces = normalized
+
     # quick inspect (short)
     # import pprint
     # print("num_traces =", len(traces))
@@ -198,7 +224,14 @@ def main(args):
     id_list = []
     for hl in highlights:
         t, s = hl.id
-        id_list.append(tuple([hl.id, traces[t].RD_vals[s]]))
+        rd_vals = getattr(traces[t], 'RD_vals', None)
+        rd_item = None
+        if rd_vals is not None:
+            try:
+                rd_item = rd_vals[s]
+            except Exception:
+                rd_item = None
+        id_list.append((hl.id, rd_item))
     save_traces(id_list, abspath('results'), name="Selected_Highlights.pkl")
     save_traces(id_list, args.output_dir, name="Selected_Highlights.pkl")
     # save_traces([x.id for x in highlights], abspath('results'), name="Selected_Indexes.pkl")
@@ -207,16 +240,45 @@ def main(args):
     traj_indxs = get_highlight_traj_indxs(highlights)
 
     # print chosen actions
-    ACTION_DICT = {0: 'LANE_LEFT', 1: 'IDLE', 2: 'LANE_RIGHT', 3: 'FASTER', 4: 'SLOWER'}
+    # Build an action -> label mapping appropriate for the current interface
+    if getattr(args, 'interface', '').lower() == 'highway':
+        ACTION_DICT = {0: 'LANE_LEFT', 1: 'IDLE', 2: 'LANE_RIGHT', 3: 'FASTER', 4: 'SLOWER'}
+    elif getattr(args, 'interface', '').lower() == 'taxi':
+        # Standard Taxi actions (0..5) -- adjust if your custom Taxi uses different indices
+        ACTION_DICT = {0: 'SOUTH', 1: 'NORTH', 2: 'EAST', 3: 'WEST', 4: 'PICKUP', 5: 'DROPOFF'}
+    else:
+        ACTION_DICT = {}
+
     for t_id, idxs in traj_indxs.items():
-        actions_from_important_state = [x for x in traces[t_id[0]].previous_actions[t_id[1]:] if
-                                        x is not None]
-        print([ACTION_DICT[x] for x in actions_from_important_state])
+        actions_from_important_state = [x for x in traces[t_id[0]].previous_actions[t_id[1]:] if x is not None]
+        # Use .get to avoid KeyError for unknown action indices
+        print([ACTION_DICT.get(x, str(x)) for x in actions_from_important_state])
         contrastive = traces[t_id[0]].contrastive[t_id[1]]
-        print([ACTION_DICT[x] for x in contrastive.actions[:len(actions_from_important_state)]])
+        print([ACTION_DICT.get(x, str(x)) for x in contrastive.actions[:len(actions_from_important_state)]])
         print(40 * "-")
 
-    img_shape = traces[0].states[0].image.shape
+    # determine image shape from first available saved frame; fall back to a default
+    img_shape = None
+    for t in traces:
+        for s in getattr(t, 'states', []):
+            img = getattr(s, 'image', None)
+            if img is not None:
+                try:
+                    img_shape = img.shape
+                    break
+                except Exception:
+                    continue
+        if img_shape is not None:
+            break
+    if img_shape is None:
+        # No saved frames found in traces. Use a safe default and warn the user.
+        default_shape = (84, 84, 3)
+        log_msg(
+            "No saved frame images found in traces; using default image shape "
+            f"{default_shape}. To reproduce exact visuals, regenerate traces with image frames.",
+            args.verbose,
+        )
+        img_shape = default_shape
 
     if args.no_mark:
         """no-mark frames"""

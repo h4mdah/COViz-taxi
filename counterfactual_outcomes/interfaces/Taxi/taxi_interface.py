@@ -28,7 +28,11 @@ class TaxiInterface(AbstractInterface):
 
     def initiate(self, seed=0, evaluation_reset=False):
         config = self.config
-        env = gym.make(config['env']['id'])
+        # Try to create env with RGB array rendering enabled so `env.render()` returns frames.
+        try:
+            env = gym.make(config['env']['id'], render_mode='rgb_array')
+        except Exception:
+            env = gym.make(config['env']['id'])
         # gym/gymnasium seeding differs between versions and wrappers.
         # Try several approaches so this works with older gym, gymnasium, and custom wrappers.
         try:
@@ -128,6 +132,11 @@ class TaxiInterface(AbstractInterface):
         if evaluation_reset:
             evaluation_reset.training = False
             evaluation_reset.close()
+        # remember the env on the interface so post_contrastive can restore state
+        try:
+            self.env = env
+        except Exception:
+            pass
         return env, agent
     
     def evaluation(self, env, agent):
@@ -166,14 +175,118 @@ class TaxiInterface(AbstractInterface):
                     "destination": dest_idx}
         # Fallback: return minimal placeholder features
         return {"position": None, "passenger_status": None, "destination": None}
+
+    def render_observation(self, obs=None, env=None, size=(84, 84)):
+        """Return an RGB numpy array visualizing the Taxi state.
+
+        Accepts either an observation (`obs`) or an environment (`env`).
+        This is a lightweight fallback renderer used when `env.render()`
+        doesn't return an image (headless environments). The output is
+        a small, 84x84 RGB array with colored squares for taxi and destination.
+        """
+        try:
+            import numpy as _np
+        except Exception:
+            return None
+
+        h, w = size
+        # default background: road grey
+        img = (_np.ones((h, w, 3), dtype='uint8') * 120)
+
+        # try to get features from env first, fall back to obs
+        features = None
+        try:
+            if env is not None:
+                features = self.get_features(env)
+        except Exception:
+            features = None
+        if features is None and obs is not None:
+            # obs may be integer state; try to reconstruct via env if possible
+            try:
+                # try to decode using an inner env if available
+                inner = getattr(env, 'unwrapped', None) or getattr(env, 'env', None) or env
+                if inner is not None and hasattr(inner, 'decode'):
+                    taxi_row, taxi_col, pass_idx, dest_idx = inner.decode(obs)
+                    features = {"position": (taxi_row, taxi_col), "passenger_status": pass_idx, "destination": dest_idx}
+            except Exception:
+                features = None
+
+        if not features:
+            return img
+
+        pos = features.get('position')
+        dest = features.get('destination')
+
+        # assume a 5x5 taxi grid by default; compute cell size
+        grid_h = grid_w = 5
+        cell_h = max(1, h // grid_h)
+        cell_w = max(1, w // grid_w)
+
+        def fill_cell(center_r, center_c, color):
+            r0 = int(center_r * cell_h)
+            c0 = int(center_c * cell_w)
+            r1 = min(h, r0 + cell_h)
+            c1 = min(w, c0 + cell_w)
+            img[r0:r1, c0:c1, :] = color
+
+        # draw destination as green
+        try:
+            if dest is not None:
+                dr = dest // grid_w
+                dc = dest % grid_w
+                fill_cell(dr, dc, [34, 177, 76])
+        except Exception:
+            pass
+
+        # draw taxi as yellow
+        try:
+            if pos is not None:
+                tr, tc = pos
+                fill_cell(tr, tc, [255, 242, 0])
+        except Exception:
+            pass
+
+        return img
     
     def contrastive_trace(self, trace_idx, k_steps, params=None):
         return TaxiTrace(trace_idx, k_steps)
     
     def pre_contrastive(self, env):
-        return deepcopy(env)
+        # Avoid deep-copying the whole env (may contain non-picklable Surfaces).
+        # For Taxi we can save the internal integer state `s` and restore it later.
+        try:
+            inner = getattr(env, 'unwrapped', None) or getattr(env, 'env', None) or env
+            s = getattr(inner, 's', None)
+            return {'s': s}
+        except Exception:
+            # fallback to nothing
+            return {'s': None}
     
     def post_contrastive(self, agent1, agent2, pre_params=None):
+        # Restore the saved internal state on agent2's interface env if possible.
+        try:
+            saved = pre_params
+            if isinstance(saved, dict) and 's' in saved:
+                iface = getattr(agent2, 'interface', None)
+                if iface is not None and hasattr(iface, 'env'):
+                    try:
+                        inner = getattr(iface.env, 'unwrapped', None) or getattr(iface.env, 'env', None) or iface.env
+                        if saved.get('s') is not None:
+                            setattr(inner, 's', saved.get('s'))
+                    except Exception:
+                        pass
+                # return the restored env if available
+                if iface is not None and hasattr(iface, 'env'):
+                    return iface.env
+        except Exception:
+            pass
+        # Fallback: return agent2's env if available, otherwise the original pre_params
+        try:
+            iface = getattr(agent2, 'interface', None)
+            if iface is not None and hasattr(iface, 'env'):
+                return iface.env
+        except Exception:
+            pass
         return pre_params
     
 
@@ -193,22 +306,39 @@ class TaxiTrace(Trace):
         self.length += 1
 
     def mark_frames(self, hl_idx, indexes, color=255, thickness=2, no_mark=False):
-        frames, rel_idx = [], 0
+        """Return a list of image frames (arrays or file paths) and the relative
+        index of the highlighted state within that list.
+        """
+        frames = []
+        rel_idx = 0
 
-        if no_mark:
-            for i in range(indexes[0], indexes[-1]+1):
-                frames.append(self.states[i])
-            return frames, rel_idx
-        
-        for i in range(indexes[0], hl_idx):
-            frames.append(self.states[i])
-            rel_idx = len(frames)
-            marked_frame = copy(self.states[hl_idx])
-            frames.append(marked_frame)
+        start = indexes[0]
+        end = indexes[-1]
+        # clamp to available states
+        start = max(0, start)
+        end = min(len(self.states) - 1, end)
 
-        for i in range(indexes[-1]-hl_idx):
-            frames.append(self.states[hl_idx+1+1])
-            return frames, rel_idx
+        # collect frames from start..end inclusive
+        for i in range(start, end + 1):
+            st = self.states[i]
+            # prefer in-memory image, then img, then image_path
+            img = getattr(st, 'image', None)
+            if img is None:
+                img = getattr(st, 'img', None)
+            if img is None and getattr(st, 'image_path', None):
+                # keep the path (lazy load later)
+                frames.append(getattr(st, 'image_path'))
+                continue
+            frames.append(img)
+
+        # compute relative index for highlighted state
+        if hl_idx < start or hl_idx > end:
+            rel_idx = 0
+        else:
+            rel_idx = hl_idx - start
+
+        # If no_mark is requested, still return images without any marking
+        return frames, rel_idx
         
 
 def taxi_config(args):
