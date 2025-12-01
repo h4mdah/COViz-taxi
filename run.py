@@ -14,7 +14,7 @@ def load_config(config_path):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='HIGHLIGHTS')
     parser.add_argument('--traces-path', help='path to existing execution traces')
-    parser.add_argument('--n_traces', help='number of traces to obtain', default=3)
+    parser.add_argument('--n_traces', help='number of traces to obtain')
     parser.add_argument('--state-importance', help='state importance method', default='second')
     parser.add_argument('--verbose', default=True)
     parser.add_argument('--k-steps', help="trajectory steps to proceed", default=5)

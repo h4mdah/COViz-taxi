@@ -34,7 +34,7 @@ class TaxiEnvWrapper(Env):
         truncated = False
         return obs, reward, terminated, truncated, info
 
-    def render(self, mode='rgb_array'):
+    def render(self):
         return self.env.render()
 
     def close(self):

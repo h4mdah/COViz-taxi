@@ -170,37 +170,6 @@ def main(args):
     """get traces"""
     traces = load_traces(args.traces_path) if args.traces_path else contrastive_online(args)
 
-    # Normalize traces: some producers (online_comparison) append a lightweight
-    # summary dict to the in-memory list to avoid holding full traces. Convert
-    # such summaries back into Trace-like objects so downstream code can
-    # access `.states`, `.contrastive`, etc.
-    from counterfactual_outcomes.common import load_trace_from_file, _dict_to_trace
-    normalized = []
-    for t in traces:
-        if isinstance(t, dict):
-            # If this dict is a summary that points to a file, load that trace
-            file_path = t.get('file') or t.get('file_path') or None
-            trace_idx = t.get('trace_idx')
-            if file_path and trace_idx is not None:
-                tr = load_trace_from_file(file_path, trace_idx)
-                if tr is not None:
-                    normalized.append(tr)
-                    continue
-            # If the dict already contains 'states', try converting directly
-            if 'states' in t:
-                normalized.append(_dict_to_trace(t))
-                continue
-            # fallback: keep dict (will likely cause errors later)
-            normalized.append(t)
-        else:
-            normalized.append(t)
-    traces = normalized
-
-    # quick inspect (short)
-    # import pprint
-    # print("num_traces =", len(traces))
-    # pprint.pprint({k: type(v) for k, v in vars(traces[0]).items()})
-    # pprint.pprint({k: type(v) for k, v in vars(traces[0].states[0]).items()})
 
     log_msg(f'Obtained traces', args.verbose)
 
@@ -258,27 +227,8 @@ def main(args):
         print(40 * "-")
 
     # determine image shape from first available saved frame; fall back to a default
-    img_shape = None
-    for t in traces:
-        for s in getattr(t, 'states', []):
-            img = getattr(s, 'image', None)
-            if img is not None:
-                try:
-                    img_shape = img.shape
-                    break
-                except Exception:
-                    continue
-        if img_shape is not None:
-            break
-    if img_shape is None:
-        # No saved frames found in traces. Use a safe default and warn the user.
-        default_shape = (84, 84, 3)
-        log_msg(
-            "No saved frame images found in traces; using default image shape "
-            f"{default_shape}. To reproduce exact visuals, regenerate traces with image frames.",
-            args.verbose,
-        )
-        img_shape = default_shape
+    img_shape = traces[0].states[0].image.shape
+        
 
     if args.no_mark:
         """no-mark frames"""

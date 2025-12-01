@@ -11,6 +11,8 @@ from rl_agents.agents.common.factory import agent_factory
 from counterfactual_outcomes.interfaces.abstract_interface import AbstractInterface
 from rl_agents.trainer.evaluation import Evaluation
 from os.path import abspath, join
+import random, numpy as _np
+from copy import deepcopy
 
 import counterfactual_outcomes.interfaces.Taxi.environments
 
@@ -28,6 +30,16 @@ class TaxiInterface(AbstractInterface):
 
     def initiate(self, seed=0, evaluation_reset=False):
         config = self.config
+        # Debug: print the resolved agent configuration so failures in agent_factory
+        # are easy to diagnose. This shows either the dict or the path that will
+        # be passed to rl_agents.agent_factory.
+        try:
+            agent_debug = None
+            if isinstance(config, dict):
+                agent_debug = config.get('agent', None)
+            print(f"[DEBUG] Resolved agent config: {type(agent_debug).__name__} -> {str(agent_debug)[:400]}")
+        except Exception:
+            pass
         # Try to create env with RGB array rendering enabled so `env.render()` returns frames.
         try:
             env = gym.make(config['env']['id'], render_mode='rgb_array')
@@ -176,118 +188,53 @@ class TaxiInterface(AbstractInterface):
         # Fallback: return minimal placeholder features
         return {"position": None, "passenger_status": None, "destination": None}
 
-    def render_observation(self, obs=None, env=None, size=(84, 84)):
-        """Return an RGB numpy array visualizing the Taxi state.
-
-        Accepts either an observation (`obs`) or an environment (`env`).
-        This is a lightweight fallback renderer used when `env.render()`
-        doesn't return an image (headless environments). The output is
-        a small, 84x84 RGB array with colored squares for taxi and destination.
-        """
-        try:
-            import numpy as _np
-        except Exception:
-            return None
-
-        h, w = size
-        # default background: road grey
-        img = (_np.ones((h, w, 3), dtype='uint8') * 120)
-
-        # try to get features from env first, fall back to obs
-        features = None
-        try:
-            if env is not None:
-                features = self.get_features(env)
-        except Exception:
-            features = None
-        if features is None and obs is not None:
-            # obs may be integer state; try to reconstruct via env if possible
-            try:
-                # try to decode using an inner env if available
-                inner = getattr(env, 'unwrapped', None) or getattr(env, 'env', None) or env
-                if inner is not None and hasattr(inner, 'decode'):
-                    taxi_row, taxi_col, pass_idx, dest_idx = inner.decode(obs)
-                    features = {"position": (taxi_row, taxi_col), "passenger_status": pass_idx, "destination": dest_idx}
-            except Exception:
-                features = None
-
-        if not features:
-            return img
-
-        pos = features.get('position')
-        dest = features.get('destination')
-
-        # assume a 5x5 taxi grid by default; compute cell size
-        grid_h = grid_w = 5
-        cell_h = max(1, h // grid_h)
-        cell_w = max(1, w // grid_w)
-
-        def fill_cell(center_r, center_c, color):
-            r0 = int(center_r * cell_h)
-            c0 = int(center_c * cell_w)
-            r1 = min(h, r0 + cell_h)
-            c1 = min(w, c0 + cell_w)
-            img[r0:r1, c0:c1, :] = color
-
-        # draw destination as green
-        try:
-            if dest is not None:
-                dr = dest // grid_w
-                dc = dest % grid_w
-                fill_cell(dr, dc, [34, 177, 76])
-        except Exception:
-            pass
-
-        # draw taxi as yellow
-        try:
-            if pos is not None:
-                tr, tc = pos
-                fill_cell(tr, tc, [255, 242, 0])
-        except Exception:
-            pass
-
-        return img
+          
     
     def contrastive_trace(self, trace_idx, k_steps, params=None):
         return TaxiTrace(trace_idx, k_steps)
     
     def pre_contrastive(self, env):
-        # Avoid deep-copying the whole env (may contain non-picklable Surfaces).
-        # For Taxi we can save the internal integer state `s` and restore it later.
+        inner = getattr(env, 'unwrapped', None) or getattr(env, 'env', None) or env
+        s = getattr(inner, 's', None)
+        if s is not None:
+            try:
+                rng = {'py': random.getstate(), 'np': _np.random.get_state()}
+            except Exception:
+                rng = None
+            return {'type': 'state_s', 's': int(s), 'rng': rng}
+        # last-resort attempt (may be heavy / fail)
         try:
-            inner = getattr(env, 'unwrapped', None) or getattr(env, 'env', None) or env
-            s = getattr(inner, 's', None)
-            return {'s': s}
+            return {'type': 'deepcopy', 'env': deepcopy(env)}
         except Exception:
-            # fallback to nothing
-            return {'s': None}
-    
+            return {'type': 'none'}
+
     def post_contrastive(self, agent1, agent2, pre_params=None):
-        # Restore the saved internal state on agent2's interface env if possible.
-        try:
-            saved = pre_params
-            if isinstance(saved, dict) and 's' in saved:
-                iface = getattr(agent2, 'interface', None)
-                if iface is not None and hasattr(iface, 'env'):
-                    try:
-                        inner = getattr(iface.env, 'unwrapped', None) or getattr(iface.env, 'env', None) or iface.env
-                        if saved.get('s') is not None:
-                            setattr(inner, 's', saved.get('s'))
-                    except Exception:
-                        pass
-                # return the restored env if available
-                if iface is not None and hasattr(iface, 'env'):
-                    return iface.env
-        except Exception:
-            pass
-        # Fallback: return agent2's env if available, otherwise the original pre_params
-        try:
-            iface = getattr(agent2, 'interface', None)
-            if iface is not None and hasattr(iface, 'env'):
-                return iface.env
-        except Exception:
-            pass
-        return pre_params
+        if pre_params is None:
+            return pre_params
+        env = getattr(self, 'env', None)
+        inner = getattr(env, 'unwrapped', None) or getattr(env, 'env', None) or env
+        if pre_params.get('type') == 'state_s':
+            s = pre_params.get('s')
+            try:
+                setattr(inner, 's', s)
+            except Exception:
+                if hasattr(inner, 'set_state'):
+                    inner.set_state(s)
+            rng = pre_params.get('rng')
+            if rng:
+                try:
+                    random.setstate(rng['py']); _np.random.set_state(rng['np'])
+                except Exception:
+                    pass
+        elif pre_params.get('type') == 'deepcopy':
+            # best-effort restore; avoid keeping copies in memory long-term
+            try:
+                copied = pre_params.get('env')
+                inner.__dict__.update(getattr(copied, '__dict__', {}))
+            except Exception:
+                pass
+        agent2.previous_state = getattr(agent1, 'previous_state', None)
+        return env
     
 
 class TaxiTrace(Trace):
@@ -353,9 +300,8 @@ def taxi_config(args):
     # Only set a default load_path if one wasn't provided via CLI or metadata
     if not getattr(args, 'load_path', None):
         args.load_path = abspath(f'../agents/{args.interface}/{args.name}')
-    args.n_traces = 10
     args.k_steps = 15
     args.overlay = args.k_steps // 2
     return args
-        
+
 
