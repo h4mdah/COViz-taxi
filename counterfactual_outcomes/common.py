@@ -130,37 +130,7 @@ def save_frames(trajectories_dict, path, contra_rel_idxs=False):
             img_name = f"{vid_num}_{frame_num}"
             if contra_rel_idxs and  j == contra_rel_idxs[hl]:
                 img_name += "_CA"
-            # f can be: numpy array image, path to image file (str), or an object with .image or .image_path
-            if isinstance(f, str):
-                # copy the file into destination
-                dest = os.path.join(path, img_name + '.png')
-                try:
-                    shutil.copy(f, dest)
-                except Exception:
-                    # fallback: try to read and write via imageio
-                    try:
-                        arr = imageio.imread(f)
-                        imageio.imwrite(dest, arr)
-                    except Exception:
-                        # write a blank placeholder
-                        imageio.imwrite(dest, (255 * np.ones((1, 1, 3), dtype='uint8')))
-            else:
-                # try to extract image array
-                img = None
-                if hasattr(f, 'image') and f.image is not None:
-                    img = f.image
-                elif hasattr(f, 'img') and f.img is not None:
-                    img = f.img
-                elif hasattr(f, 'image_path') and f.image_path:
-                    try:
-                        img = imageio.imread(f.image_path)
-                    except Exception:
-                        img = None
-                if img is None:
-                    # fallback placeholder
-                    img = 255 * np.ones((1, 1, 3), dtype='uint8')
-                save_image(path, img_name, img)
-
+            save_image(path, img_name, f)
 
 def save_highlights(img_shape, n_videos, frames_path, videos_path, args):
     """Save Highlight videos"""
@@ -452,3 +422,4 @@ def load_trace_from_file(file_path, trace_idx=None):
         except Exception:
             continue
     return None
+
