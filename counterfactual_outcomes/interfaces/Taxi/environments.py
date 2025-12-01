@@ -6,7 +6,7 @@ from gymnasium import Env
 class TaxiEnvWrapper(Env):
     """Wrapper to expose the Gymnasium new API for Taxi-v3."""
     def __init__(self, **kwargs):
-        self.env = gym.make('Taxi-v3')
+        self.env = gym.make('Taxi-v3', render_mode = 'rgb_array')
         self.action_space = self.env.action_space
         self.observation_space = self.env.observation_space
         # keep metadata/reward_range if present
@@ -39,5 +39,21 @@ class TaxiEnvWrapper(Env):
 
     def close(self):
         return self.env.close()
+    
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        state['unwrapped_state_s'] = self.env.unwrapped.s
+
+        del state['env']
+        if 'unwrapped' in state:
+            del state['unwrapped']
+        return state
+    
+    def __setstate__(self, state):
+        unwrapped_state_s = state.pop('unwrapped_state_s')
+        self.__dict__.update(state)
+        self.env = gym.make(self.env_id, render_mode=self.render_mode)
+        self.env.unwrapped.s = unwrapped_state_s
+
 
 register(id='Taxi-v3-COViz', entry_point='counterfactual_outcomes.interfaces.Taxi.environments:TaxiEnvWrapper')

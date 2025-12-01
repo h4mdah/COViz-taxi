@@ -41,16 +41,6 @@ if __name__ == '__main__':
         if getattr(args, key.replace('-', '_'), None) is None:
             setattr(args, key.replace('-', '_'), value)
 
-    # args.interface = "Highway"
-    # args.pause = 3
-    # args.fps = 3
-    # args.contra_action_counter = 1
-    # args.num_highlights = 15
-    # args.min_traj_len = 10
-    # args.overlay = args.min_traj_len//2
-    # args.no_mark = True
-
-    # args.importance_method = 'lastState'  # highlights_secondbest / highlights_worst / frequency
 
     """If existing (saved) traces"""
     if args.traces_path:

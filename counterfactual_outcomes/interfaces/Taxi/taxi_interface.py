@@ -33,18 +33,8 @@ class TaxiInterface(AbstractInterface):
         # Debug: print the resolved agent configuration so failures in agent_factory
         # are easy to diagnose. This shows either the dict or the path that will
         # be passed to rl_agents.agent_factory.
-        try:
-            agent_debug = None
-            if isinstance(config, dict):
-                agent_debug = config.get('agent', None)
-            print(f"[DEBUG] Resolved agent config: {type(agent_debug).__name__} -> {str(agent_debug)[:400]}")
-        except Exception:
-            pass
-        # Try to create env with RGB array rendering enabled so `env.render()` returns frames.
-        try:
-            env = gym.make(config['env']['id'], render_mode='rgb_array')
-        except Exception:
-            env = gym.make(config['env']['id'])
+
+        env = gym.make(config['env']['id'], render_mode='rgb_array')
         # gym/gymnasium seeding differs between versions and wrappers.
         # Try several approaches so this works with older gym, gymnasium, and custom wrappers.
         try:
