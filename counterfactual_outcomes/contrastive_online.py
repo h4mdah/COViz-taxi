@@ -24,7 +24,7 @@ class ContrastiveTrajectory(object):
         self.rewards.append(r)
         self.actions.append(action)
 
-   def get_contrastive_trajectory(self, env, agent, state_id, contra_action, contra_counter):
+    def get_contrastive_trajectory(self, env, agent, state_id, contra_action, contra_counter):
         action = contra_action
         current_step_idx = state_id[1] + 1
         done = False
