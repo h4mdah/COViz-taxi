@@ -19,7 +19,11 @@ class ContrastiveTrajectory(object):
 
     def get_contrastive_trajectory(self, env, agent, state_id, contra_action, contra_counter):
         action = contra_action
-        for step in range(state_id[1] + 1, state_id[1] + self.k_steps + 1):
+        current_step_idx = state_id[1] + 1
+        done = False
+        max_steps = 200
+        steps_run = 0
+        while not done and steps_run < max_steps:
             out = env.step(action)
             if isinstance(out, tuple) and len(out) == 5:
                 obs, r, terminated, truncated, info = out
@@ -29,14 +33,17 @@ class ContrastiveTrajectory(object):
             contra_counter -= 1  # reduce contra counter
             s = agent.interface.get_state_from_obs(agent, obs)
             s_a_values = agent.interface.get_state_action_values(agent, s)
-            frame = env.render(mode='rgb_array')
+            frame = env.render()
             features = agent.interface.get_features(env)
-            contra_state_id = (state_id[0], step)
+            contra_state_id = (state_id[0], current_step_idx)
             state_obj = State(contra_state_id, obs, s, s_a_values, frame, features)
             self.update(state_obj, r, action)
             if done: break
             if contra_counter > 0: continue
             action = agent.interface.get_next_action(agent, obs, s)
+            current_step_idx +=1
+            steps_run += 1
+
 
 
 def get_contrastive_trajectory(state_id, trace, env, agent, contra_action, k_steps,
@@ -104,3 +111,4 @@ def online_comparison(env1, agent1, env2, agent2, args, evaluation1=None, evalua
         """end of episode"""
         traces.append(trace)
     return traces
+
