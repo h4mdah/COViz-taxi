@@ -290,8 +290,9 @@ def taxi_config(args):
     # Only set a default load_path if one wasn't provided via CLI or metadata
     if not getattr(args, 'load_path', None):
         args.load_path = abspath(f'../agents/{args.interface}/{args.name}')
-    args.k_steps = 15
-    args.overlay = args.k_steps // 2
+    args.k_steps = 50
+    args.overlay = 5
+    args.contra_action_counter = 1
     return args
 
 

@@ -392,6 +392,15 @@ def iter_load_traces_multiobject(path):
     except Exception:
         return
 
+def hstack_frames(img1, img2):
+    if img1.shape[0] != img2.shape[0]:
+        # resize to the smaller height
+        min_height = min(img1.shape[0], img2.shape[0])
+        img1 = cv2.resize(img1, (int(img1.shape[1] * min_height / img1.shape[0]), min_height))
+        img2 = cv2.resize(img2, (int(img2.shape[1] * min_height / img2.shape[0]), min_height))
+    
+    combined_img = cv2.hconcat([img1, img2])
+    return combined_img
 
 def load_trace_from_file(file_path, trace_idx=None):
     """Load a single trace (converted to Trace object) from a Traces.pkl file.

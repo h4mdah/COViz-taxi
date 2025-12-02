@@ -8,6 +8,7 @@ from counterfactual_outcomes.common import log_msg
 from counterfactual_outcomes.common import State
 from tqdm import trange
 from memory_profiler import profile
+import numpy as np
 
 class ContrastiveTrajectory(object):
     def __init__(self, state_id, k_steps, trace):
@@ -25,19 +26,23 @@ class ContrastiveTrajectory(object):
         self.actions.append(action)
 
     def get_contrastive_trajectory(self, env, agent, state_id, contra_action, contra_counter):
+        # Apply the counterfactual action for exactly one step, then follow the
+        # agent's policy for up to `self.k_steps` steps or until the episode ends.
         action = contra_action
         current_step_idx = state_id[1] + 1
         done = False
-        max_steps = 200
-        steps_run = 0
-        while not done and steps_run < max_steps:
+        steps_taken = 0
+        max_steps = max(1, int(self.k_steps))  # ensure integer >=1
+
+        while not done and steps_taken < max_steps:
             out = env.step(action)
             if isinstance(out, tuple) and len(out) == 5:
                 obs, r, terminated, truncated, info = out
                 done = bool(terminated or truncated)
             else:
                 obs, r, done, info = out
-            contra_counter -= 1  # reduce contra counter
+
+            # Build state object for this contrastive step and store it
             s = agent.interface.get_state_from_obs(agent, obs)
             s_a_values = agent.interface.get_state_action_values(agent, s)
             frame = env.render()
@@ -45,11 +50,15 @@ class ContrastiveTrajectory(object):
             contra_state_id = (state_id[0], current_step_idx)
             state_obj = State(contra_state_id, obs, s, s_a_values, frame, features)
             self.update(state_obj, r, action)
-            if done: break
-            if contra_counter > 0: continue
+
+            steps_taken += 1
+            if done:
+                break
+
+            # After the first (counterfactual) step, switch to the agent's policy
+            # for all subsequent steps in this contrastive rollout.
             action = agent.interface.get_next_action(agent, obs, s)
-            current_step_idx +=1
-            steps_run += 1
+            current_step_idx += 1
 
 
 def get_contrastive_trajectory(state_id, trace, env, agent, contra_action, k_steps,
@@ -93,7 +102,31 @@ def online_comparison(env1, agent1, env2, agent2, args, evaluation1=None, evalua
             trace.update(state_obj, obs, r, done, infos, agent1_a, state_id)
             """actions"""
             agent1_a = agent1.interface.get_next_action(agent1, obs, state) if not done else None
-            agent2_a = sorted(list(enumerate(s_a_values)), key=lambda x: x[1])[-2][0]
+            # derive a contrastive action robustly. If state-action values are
+            # flat or unavailable (e.g., SB3 fallback returning zeros), pick a
+            # deterministic alternative to the agent1 action instead of a
+            # seemingly-random choice.
+            try:
+                vals = np.asarray(s_a_values)
+                # if values are non-informative (all equal), fall back
+                if vals.size == 0 or np.allclose(vals, vals.flat[0]):
+                    # prefer an action different from agent1's action
+                    n_actions = vals.size if vals.size > 0 else getattr(getattr(agent1, 'action_space', None), 'n', None)
+                    if n_actions is None or n_actions == 0:
+                        # last resort: ask agent2 for its preferred action
+                        agent2_pref = agent2.interface.get_next_action(agent2, obs, state)
+                        agent2_a = agent2_pref if agent2_pref is not None else 0
+                    else:
+                        base = agent1_a if agent1_a is not None else 0
+                        agent2_a = (base + 1) % int(n_actions)
+                else:
+                    agent2_a = sorted(list(enumerate(vals)), key=lambda x: x[1])[-2][0]
+            except Exception:
+                # conservative fallback
+                try:
+                    agent2_a = agent2.interface.get_next_action(agent2, obs, state)
+                except Exception:
+                    agent2_a = 0
             """contrastive trajectory"""
             pre_vars = agent2.interface.pre_contrastive(env1)
             trace.contrastive.append(
@@ -101,6 +134,41 @@ def online_comparison(env1, agent1, env2, agent2, args, evaluation1=None, evalua
                                            args.contra_action_counter))
             """return agent 2 environment to the current state"""
             env2 = agent2.interface.post_contrastive(agent1, agent2, pre_vars)
+            # Prefer restoring the exact Taxi state without calling `reset()`
+            # because `reset()` may change RNG or other hidden state. If the
+            # underlying env exposes `s` (Taxi's integer state), use it as the
+            # observation and avoid reset. Fall back to `reset()` only when
+            # `s` is not available.
+            obs2_reset = None
+            try:
+                inner = getattr(env2, 'unwrapped', None) or getattr(env2, 'env', None) or env2
+                s_val = getattr(inner, 's', None)
+                if s_val is not None:
+                    obs2_reset = int(s_val)
+                    # if rng was saved in pre_vars, try to restore it here
+                    if isinstance(pre_vars, dict) and pre_vars.get('type') == 'state_s':
+                        rng = pre_vars.get('rng')
+                        if rng:
+                            try:
+                                import random as _rnd, numpy as _npy
+                                _rnd.setstate(rng['py']); _npy.random.set_state(rng['np'])
+                            except Exception:
+                                pass
+                else:
+                    # last-resort: call reset() so wrappers that enforce reset
+                    # before stepping are satisfied
+                    res_reset = env2.reset()
+                    obs2_reset = res_reset[0] if isinstance(res_reset, tuple) else res_reset
+            except Exception:
+                try:
+                    res_reset = env2.reset()
+                    obs2_reset = res_reset[0] if isinstance(res_reset, tuple) else res_reset
+                except Exception:
+                    obs2_reset = None
+
+            # sync agent previous_state if we obtained an observation
+            if obs2_reset is not None:
+                agent1.previous_state = agent2.previous_state = obs2_reset
             """Transition both agent's based on agent 1 action"""
             step += 1
             out = env1.step(agent1_a)

@@ -20,7 +20,7 @@ from pathlib import Path
 import pickle
 
 from counterfactual_outcomes.common import save_traces, log_msg, load_traces, \
-    get_highlight_traj_indxs, save_highlights, save_frames
+    get_highlight_traj_indxs, save_highlights, save_frames, hstack_frames
 from counterfactual_outcomes.contrastive_online import online_comparison
 from counterfactual_outcomes.contrastive_online_RD import online_comparison_RD
 from counterfactual_outcomes.get_agent import get_config, get_agent
@@ -228,6 +228,11 @@ def main(args):
 
     # determine image shape from first available saved frame; fall back to a default
     img_shape = traces[0].states[0].image.shape
+    if img_shape:
+        height, width, layers = img_shape
+        combined_width = width * 2 
+        combined_shape = (height, combined_width, layers)
+        img_shape = combined_shape
         
 
     if args.no_mark:
@@ -248,8 +253,32 @@ def main(args):
         trace = traces[hl[0]]
         highlight_frames[hl], contra_rel_idxs[hl] = trace.mark_frames(hl[1], indxs)
 
+    """mark contrastive frames (side-by-side)"""
+    highlight_frames_combined = {}
+    for hl_id, indxs in traj_indxs.items():
+        t_idx, s_idx = hl_id # unpack
+        trace = traces[t_idx] # get trace
+        contra_traj = trace.contrastive[s_idx] # get contrastive trajectory
+
+        combined_frames = []
+
+        n_steps = min(len(indxs), len(contra_traj.states))
+
+        for i in range(n_steps):
+            orig_state_idx = indxs[i]
+            orig_frame = trace.states[orig_state_idx].image
+
+            contra_frame = contra_traj.states[i].image
+
+            combined_frame = hstack_frames(orig_frame, contra_frame)
+            combined_frames.append(combined_frame)
+        
+        highlight_frames_combined[hl_id] = combined_frames
+            
+            
+
     """save highlight frames"""
-    save_frames(highlight_frames, args.frames_dir, contra_rel_idxs)
+    save_frames(highlight_frames_combined, args.frames_dir, contra_rel_idxs)
 
     """generate highlights video"""
     save_highlights(img_shape, len(highlight_frames), args.frames_dir, args.videos_dir, args)

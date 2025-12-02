@@ -9,6 +9,8 @@ class TaxiEnvWrapper(Env):
         self.env = gym.make('Taxi-v3', render_mode = 'rgb_array')
         self.action_space = self.env.action_space
         self.observation_space = self.env.observation_space
+        self.render_mode = self.env.render_mode
+        self.env_id = 'Taxi-v3'
         # keep metadata/reward_range if present
         self.metadata = getattr(self.env, "metadata", {})
         self.reward_range = getattr(self.env, "reward_range", None)
