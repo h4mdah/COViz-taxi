@@ -74,9 +74,10 @@ class TaxiInterface(AbstractInterface):
             agent = None
             try:
                 from stable_baselines3 import DQN
-                model_dir = config.get('model_dir') or self.load_path or 'agents/taxi_sb3'
+                model_dir = config.get('model_dir') or self.load_path or 'agents\\taxi_sb3'
                 # find latest .zip model in model_dir
                 model_files = sorted(glob.glob(join(model_dir, '*.zip')), key=os.path.getmtime, reverse=True)
+                print("Loaded model files:", model_files[0])
                 if model_files:
                     sb3_model = DQN.load(model_files[0])
 
@@ -84,6 +85,7 @@ class TaxiInterface(AbstractInterface):
                         def __init__(self, model, action_space):
                             self.model = model
                             self.action_space = action_space
+                            self.previous_state = None
 
                         def act(self, state):
                             # SB3 expects numpy observation; leave to model.predict to handle
@@ -166,16 +168,69 @@ class TaxiInterface(AbstractInterface):
     def get_next_action(self, agent, obs, state):
         return agent.act(state)
     
-    def get_features(self, env):
+    def get_features(self, env, obs=None):
         # Different wrappers expose the underlying Taxi env differently. Try several
         # ways to access the underlying environment and its state `s` and `decode`.
-        inner = getattr(env, 'unwrapped', None) or getattr(env, 'env', None) or env
-        s = getattr(inner, 's', None)
-        if hasattr(inner, 'decode') and s is not None:
-            taxi_row, taxi_col, pass_idx, dest_idx = inner.decode(s)
-            return {"position": (taxi_row, taxi_col), "passenger_status": pass_idx,
-                    "destination": dest_idx}
-        # Fallback: return minimal placeholder features
+        # Accept an optional observation decode fallback via `obs` if available.
+        # Note: keep signature backwards-compatible; callers may pass only `env`.
+        obs = None
+        # allow callers to pass (env, obs) if they forwarded obs
+        # but maintain compatibility: if called with two args, `env` will be a tuple
+        # This wrapper method is called internally with (env, obs) by our code.
+        try:
+            # If someone called get_features(env, obs), Python passes obs as second arg
+            # but not via this signature; handle via attribute if present
+            pass
+        except Exception:
+            pass
+
+        # locate a candidate object that might have `decode` and `s`
+        candidate = getattr(env, 'unwrapped', None) or getattr(env, 'env', None) or env
+        searched = set()
+        for _ in range(5):
+            if candidate is None:
+                break
+            cid = id(candidate)
+            if cid in searched:
+                break
+            searched.add(cid)
+            s = getattr(candidate, 's', None)
+            if hasattr(candidate, 'decode'):
+                # prefer decode from explicit s if available
+                if s is not None:
+                    try:
+                        taxi_row, taxi_col, pass_idx, dest_idx = candidate.decode(s)
+                        return {"position": (taxi_row, taxi_col), "passenger_status": pass_idx,
+                                "destination": dest_idx}
+                    except Exception:
+                        pass
+                # fallback: try decoding from obs if it's an int-like state
+                try:
+                    if obs is not None:
+                        s_obs = obs[0] if isinstance(obs, tuple) else obs
+                        if isinstance(s_obs, (int,)):
+                            taxi_row, taxi_col, pass_idx, dest_idx = candidate.decode(int(s_obs))
+                            return {"position": (taxi_row, taxi_col), "passenger_status": pass_idx,
+                                    "destination": dest_idx}
+                except Exception:
+                    pass
+            # try to drill down into common attributes that hold the inner env
+            next_cand = None
+            for attr in ('env', 'unwrapped', 'inner', 'wrapped_env'):
+                next_cand = getattr(candidate, attr, None)
+                if next_cand is not None:
+                    break
+            candidate = next_cand
+
+        # Fallback: try to decode from a provided observation if it's an int
+        try:
+            # callers in this repo pass obs separately; attempt to get it from
+            # a global-like place if available (not ideal) — prefer explicit pass.
+            # We don't have obs here reliably; return placeholders.
+            pass
+        except Exception:
+            pass
+
         return {"position": None, "passenger_status": None, "destination": None}
 
           
@@ -184,47 +239,51 @@ class TaxiInterface(AbstractInterface):
         return TaxiTrace(trace_idx, k_steps)
     
     def pre_contrastive(self, env):
-        inner = getattr(env, 'unwrapped', None) or getattr(env, 'env', None) or env
-        s = getattr(inner, 's', None)
-        if s is not None:
-            try:
-                rng = {'py': random.getstate(), 'np': _np.random.get_state()}
-            except Exception:
-                rng = None
-            return {'type': 'state_s', 's': int(s), 'rng': rng}
-        # last-resort attempt (may be heavy / fail)
-        try:
-            return {'type': 'deepcopy', 'env': deepcopy(env)}
-        except Exception:
-            return {'type': 'none'}
+        return deepcopy(env)
+        # inner = getattr(env, 'unwrapped', None) or getattr(env, 'env', None) or env
+        # s = getattr(inner, 's', None)
+        # if s is not None:
+        #     try:
+        #         rng = {'py': random.getstate(), 'np': _np.random.get_state()}
+        #     except Exception:
+        #         rng = None
+        #     return {'type': 'state_s', 's': int(s), 'rng': rng}
+        # # last-resort attempt (may be heavy / fail)
+        # try:
+        #     return {'type': 'deepcopy', 'env': deepcopy(env)}
+        # except Exception:
+        #     return {'type': 'none'}
 
     def post_contrastive(self, agent1, agent2, pre_params=None):
-        if pre_params is None:
-            return pre_params
-        env = getattr(self, 'env', None)
-        inner = getattr(env, 'unwrapped', None) or getattr(env, 'env', None) or env
-        if pre_params.get('type') == 'state_s':
-            s = pre_params.get('s')
-            try:
-                setattr(inner, 's', s)
-            except Exception:
-                if hasattr(inner, 'set_state'):
-                    inner.set_state(s)
-            rng = pre_params.get('rng')
-            if rng:
-                try:
-                    random.setstate(rng['py']); _np.random.set_state(rng['np'])
-                except Exception:
-                    pass
-        elif pre_params.get('type') == 'deepcopy':
-            # best-effort restore; avoid keeping copies in memory long-term
-            try:
-                copied = pre_params.get('env')
-                inner.__dict__.update(getattr(copied, '__dict__', {}))
-            except Exception:
-                pass
-        agent2.previous_state = getattr(agent1, 'previous_state', None)
+        env = pre_params
+        agent1.previous_state = agent2.previous_state
         return env
+        # if pre_params is None:
+        #     return pre_params
+        # env = getattr(self, 'env', None)
+        # inner = getattr(env, 'unwrapped', None) or getattr(env, 'env', None) or env
+        # if pre_params.get('type') == 'state_s':
+        #     s = pre_params.get('s')
+        #     try:
+        #         setattr(inner, 's', s)
+        #     except Exception:
+        #         if hasattr(inner, 'set_state'):
+        #             inner.set_state(s)
+        #     rng = pre_params.get('rng')
+        #     if rng:
+        #         try:
+        #             random.setstate(rng['py']); _np.random.set_state(rng['np'])
+        #         except Exception:
+        #             pass
+        # elif pre_params.get('type') == 'deepcopy':
+        #     # best-effort restore; avoid keeping copies in memory long-term
+        #     try:
+        #         copied = pre_params.get('env')
+        #         inner.__dict__.update(getattr(copied, '__dict__', {}))
+        #     except Exception:
+        #         pass
+        # agent2.previous_state = getattr(agent1, 'previous_state', None)
+        # return env
     
 
 class TaxiTrace(Trace):

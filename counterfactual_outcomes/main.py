@@ -128,11 +128,15 @@ def get_top_k_diverse(traces, args):
     sort contrastive trajectories by importance and return the top k important ones
     diversity measure - check intersection between trajectory indexes
     """
+    # collect only actual ContrastiveTrajectory objects (ignore None placeholders)
     all_contrastive_trajs = []
-    for t in traces: all_contrastive_trajs += t.contrastive
+    for t in traces:
+        all_contrastive_trajs += [c for c in getattr(t, 'contrastive', []) if c is not None]
     if args.importance_method == "frequency":
         random.shuffle(all_contrastive_trajs)
     else:
+        # sort by importance; ensure entries have the attribute
+        all_contrastive_trajs = [c for c in all_contrastive_trajs if hasattr(c, 'importance')]
         all_contrastive_trajs.sort(key=lambda x: x.importance)
 
     # print([x.importance for x in all_contrastive_trajs[-10:]])

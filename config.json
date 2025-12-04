@@ -4,7 +4,7 @@
     "state_importance": "second",
     "verbose": true,
     "k_steps": 5,
-    "overlay": 3,
+    "overlay": 8,
     "minimum_gap": 0,
     "randomized": true,
     "fps": 3,
@@ -18,7 +18,8 @@
     "pause": 3,
     "contra_action_counter": 0,
     "min_traj_len": 1,
-    "no_mark": true,
+    "no_mark": false,
     "multi_head": false,
-    "model_dir": "agents/taxi_sb3"
+    "model_dir": "C:\\Users\\hmari\\Desktop\\THI_KI\\S5\\COViz-taxi\\agents\\taxi_sb3\\",
+    "sync_prefix": 4
 }
