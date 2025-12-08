@@ -197,14 +197,19 @@ def create_highlights_videos(frames_dir, video_dir, n_HLs, size, fps, pause=None
         img_array = []
         file_list = sorted(
             [x for x in glob.glob(frames_dir + "/*.png") if x.split('/')[-1].startswith(hl_str)])
+        if file_list:
+            first_frame = cv2.imread(file_list[0])
+            common_size = (first_frame.shape[1], first_frame.shape[0])
         for i, f in enumerate(file_list):
             img = cv2.imread(f)
+            # Resize the frame to the common size
+            img = cv2.resize(img, common_size)
             if f.endswith("CA.png") and pause:
                 [img_array.append(img) for _ in range(pause)]
             img_array.append(img)
 
         out = cv2.VideoWriter(join(video_dir, f'HL_{hl}.mp4'), cv2.VideoWriter_fourcc(*'mp4v'),
-                              fps, size)
+                              fps, common_size)
         for i in range(len(img_array)):
             out.write(img_array[i])
         out.release()
@@ -431,4 +436,5 @@ def load_trace_from_file(file_path, trace_idx=None):
         except Exception:
             continue
     return None
+
 
