@@ -162,105 +162,11 @@ def online_comparison(env1, agent1, env2, agent2, args, evaluation1=None, evalua
 
         # create contrastive trajectory from env2 starting at this fork state
         pre_vars = agent2.interface.pre_contrastive(env1)
-        contra_traj = get_contrastive_trajectory(state_id, trace, env2, agent2, agent2_a, args.k_steps,
+        
+        
+        contra_traj = get_contrastive_trajectory(state_id, trace, pre_vars, agent2, agent2_a, args.k_steps, #changed from env2 to pre_vars
                                                  args.contra_action_counter)
         trace.contrastive.append(contra_traj)
-
-        # Extra logging for debugging/validation: print fork features and
-        # the first few contrastive actions/states so the user can verify
-        # the contrastive rollout actually diverged from the main trajectory.
-        try:
-            logging.info(f"Fork: trace={t} step={step} state_id={state_id} features={features}")
-            logging.info(f"Fork actions: agent1_a={agent1_a} agent2_a={agent2_a}")
-            # Diagnostic: inspect inner env and obs to understand missing features
-            try:
-                inner1 = getattr(env1, 'unwrapped', None) or getattr(env1, 'env', None) or env1
-                s1 = getattr(inner1, 's', None)
-                has_decode = hasattr(inner1, 'decode')
-                logging.info(f"Fork diag (env1): inner={type(inner1)} has_decode={has_decode} s={s1}")
-            except Exception as _:
-                logging.info(f"Fork diag (env1): could not inspect inner env: {_}")
-            try:
-                logging.info(f"Fork diag obs: obs={obs} type={type(obs)}")
-            except Exception:
-                logging.info("Fork diag obs: (unprintable)")
-            # print first few contrastive actions
-            first_actions = getattr(contra_traj, 'actions', [])[:10]
-            logging.info(f"Contrastive first actions: {first_actions}")
-            # print first few contrastive states' features if available
-            contra_state_feats = [getattr(s, 'features', None) for s in getattr(contra_traj, 'states', [])[:10]]
-            logging.info(f"Contrastive first state features: {contra_state_feats}")
-        except Exception:
-            pass
-
-        # Human-readable paired report for the fork: include a few steps before
-        # the fork and N steps after so you can compare trajectories easily.
-        try:
-            N = int(getattr(args, 'fork_report_steps', 10) or 10)
-            pre = int(getattr(args, 'fork_report_pre', 2) or 2)
-            # build action name mapping for readability
-            if getattr(args, 'interface', '').lower() == 'taxi':
-                ACTION_DICT = {0: 'SOUTH', 1: 'NORTH', 2: 'EAST', 3: 'WEST', 4: 'PICKUP', 5: 'DROPOFF'}
-            elif getattr(args, 'interface', '').lower() == 'highway':
-                ACTION_DICT = {0: 'LANE_LEFT', 1: 'IDLE', 2: 'LANE_RIGHT', 3: 'FASTER', 4: 'SLOWER'}
-            else:
-                ACTION_DICT = {}
-
-            # Window: start a few steps before fork, end N steps after
-            start_idx = max(0, state_id[1] - pre)
-            end_idx = state_id[1] + N
-
-            # precompute contrastive states by their trace-step index
-            contra_states = getattr(contra_traj, 'states', [])
-            contra_actions = getattr(contra_traj, 'actions', [])
-            contra_rewards = getattr(contra_traj, 'rewards', [])
-            contra_map = {getattr(s, 'id', (None, None))[1]: s for s in contra_states if getattr(s, 'id', None)}
-
-            # find fork position index in contra_states to align actions
-            fork_pos_in_contra = next((i for i, s in enumerate(contra_states) if getattr(s, 'id', None) == state_id), None)
-
-            logging.info(f"Fork report (from step {start_idx} to {end_idx}) — fork_state={state_id} features={features}")
-            for idx in range(start_idx, end_idx + 1):
-                # True entry
-                if idx < len(trace.states):
-                    st = trace.states[idx]
-                    act = trace.previous_actions[idx] if idx < len(trace.previous_actions) else None
-                    rew = trace.rewards[idx] if idx < len(trace.rewards) else None
-                    try:
-                        pos = st.features.get('position') if getattr(st, 'features', None) else None
-                    except Exception:
-                        pos = None
-                    true_entry = (ACTION_DICT.get(act, act), pos, rew)
-                else:
-                    true_entry = (None, None, None)
-
-                # Contrastive entry (may be missing before fork)
-                if idx in contra_map:
-                    stc = contra_map[idx]
-                    # compute action index offset relative to fork
-                    if fork_pos_in_contra is not None:
-                        offset = idx - state_id[1]
-                        action_idx = offset - 1
-                        if action_idx >= 0 and action_idx < len(contra_actions):
-                            actc = contra_actions[action_idx]
-                            rewc = contra_rewards[action_idx] if action_idx < len(contra_rewards) else None
-                        else:
-                            actc = None; rewc = None
-                    else:
-                        actc = None; rewc = None
-                    try:
-                        posc = stc.features.get('position') if getattr(stc, 'features', None) else None
-                    except Exception:
-                        posc = None
-                    contra_entry = (ACTION_DICT.get(actc, actc), posc, rewc)
-                else:
-                    contra_entry = (None, None, None)
-
-                rel = idx - state_id[1]
-                label = f"Step{rel:+d}" if rel != 0 else "Fork"
-                logging.info(f"{label}: TRUE: {true_entry} | CONTRA: {contra_entry}")
-        except Exception:
-            pass
         # we do not call post_contrastive here; env2 has been consumed by contra_traj
 
         # 3) Continue original (env1) until episode end — record true future
@@ -307,4 +213,3 @@ def online_comparison(env1, agent1, env2, agent2, args, evaluation1=None, evalua
         """end of episode"""
         traces.append(trace)
     return traces
-
