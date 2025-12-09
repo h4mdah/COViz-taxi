@@ -162,9 +162,12 @@ def online_comparison(env1, agent1, env2, agent2, args, evaluation1=None, evalua
 
         # create contrastive trajectory from env2 starting at this fork state
         pre_vars = agent2.interface.pre_contrastive(env1)
-        contra_traj = get_contrastive_trajectory(state_id, trace, pre_vars, agent2, agent2_a, args.k_steps,
+        
+        
+        contra_traj = get_contrastive_trajectory(state_id, trace, pre_vars, agent2, agent2_a, args.k_steps, #changed from env2 to pre_vars
                                                  args.contra_action_counter)
         trace.contrastive.append(contra_traj)
+        # we do not call post_contrastive here; env2 has been consumed by contra_traj
 
 
         # 3) Continue original (env1) until episode end — record true future
@@ -211,4 +214,3 @@ def online_comparison(env1, agent1, env2, agent2, args, evaluation1=None, evalua
         """end of episode"""
         traces.append(trace)
     return traces
-
