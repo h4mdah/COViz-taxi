@@ -240,50 +240,11 @@ class TaxiInterface(AbstractInterface):
     
     def pre_contrastive(self, env):
         return deepcopy(env)
-        # inner = getattr(env, 'unwrapped', None) or getattr(env, 'env', None) or env
-        # s = getattr(inner, 's', None)
-        # if s is not None:
-        #     try:
-        #         rng = {'py': random.getstate(), 'np': _np.random.get_state()}
-        #     except Exception:
-        #         rng = None
-        #     return {'type': 'state_s', 's': int(s), 'rng': rng}
-        # # last-resort attempt (may be heavy / fail)
-        # try:
-        #     return {'type': 'deepcopy', 'env': deepcopy(env)}
-        # except Exception:
-        #     return {'type': 'none'}
 
     def post_contrastive(self, agent1, agent2, pre_params=None):
         env = pre_params
         agent1.previous_state = agent2.previous_state
         return env
-        # if pre_params is None:
-        #     return pre_params
-        # env = getattr(self, 'env', None)
-        # inner = getattr(env, 'unwrapped', None) or getattr(env, 'env', None) or env
-        # if pre_params.get('type') == 'state_s':
-        #     s = pre_params.get('s')
-        #     try:
-        #         setattr(inner, 's', s)
-        #     except Exception:
-        #         if hasattr(inner, 'set_state'):
-        #             inner.set_state(s)
-        #     rng = pre_params.get('rng')
-        #     if rng:
-        #         try:
-        #             random.setstate(rng['py']); _np.random.set_state(rng['np'])
-        #         except Exception:
-        #             pass
-        # elif pre_params.get('type') == 'deepcopy':
-        #     # best-effort restore; avoid keeping copies in memory long-term
-        #     try:
-        #         copied = pre_params.get('env')
-        #         inner.__dict__.update(getattr(copied, '__dict__', {}))
-        #     except Exception:
-        #         pass
-        # agent2.previous_state = getattr(agent1, 'previous_state', None)
-        # return env
     
 
 class TaxiTrace(Trace):

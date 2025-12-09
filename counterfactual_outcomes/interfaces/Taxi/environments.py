@@ -55,6 +55,7 @@ class TaxiEnvWrapper(Env):
         unwrapped_state_s = state.pop('unwrapped_state_s')
         self.__dict__.update(state)
         self.env = gym.make(self.env_id, render_mode=self.render_mode)
+        self.env.reset()
         self.env.unwrapped.s = unwrapped_state_s
 
 

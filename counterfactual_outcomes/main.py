@@ -271,10 +271,18 @@ def main(args):
         for i in range(n_steps):
             orig_state_idx = indxs[i]
             orig_frame = trace.states[orig_state_idx].image
-
+            try:
+                orig_rew = trace.rewards[orig_state_idx]
+            except Exception:
+                orig_rew = 'N/A' \
+            
             contra_frame = contra_traj.states[i].image
-
-            combined_frame = hstack_frames(orig_frame, contra_frame)
+            try:
+                contra_rew = contra_traj.rewards[i]
+            except Exception:
+                contra_rew = 'N/A' 
+            
+            combined_frame = hstack_frames(orig_frame, str(orig_rew), contra_frame, str(contra_rew))
             combined_frames.append(combined_frame)
         
         highlight_frames_combined[hl_id] = combined_frames
