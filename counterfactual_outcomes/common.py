@@ -410,7 +410,7 @@ def hstack_frames(img1, text1, img2, text2):
     # --- Step 1: Define Constants and Calculate Required Caption Heights ---
     
     font = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale = 1
+    font_scale = 0.5
     font_thickness = 2
     padding = 20                 # Vertical padding around text
     text_color = (0, 0, 0)       # Black text (BGR)

@@ -16,8 +16,13 @@ class ContrastiveTrajectory(object):
         self.k_steps = k_steps
         self.id = state_id
         self.start_idx = (state_id[1] - k_steps) if (state_id[1] - k_steps) >= 0 else 0
-        self.rewards = []
-        self.states = trace.states[self.start_idx:]
+        # Pre-fill rewards with the original trajectory rewards from the start_idx
+        # so that rewards and states align for prefix frames.
+        try:
+            self.rewards = list(trace.rewards[self.start_idx:]) if getattr(trace, 'rewards', None) is not None else []
+        except Exception:
+            self.rewards = []
+        self.states = list(trace.states[self.start_idx:])
         self.actions = []
 
     def update(self, state_obj, r, action):

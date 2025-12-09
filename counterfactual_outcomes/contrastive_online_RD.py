@@ -124,6 +124,29 @@ def online_comparison_RD(env1, agent1, env2, agent2, args, evaluation1=None, eva
         contra_traj = get_contrastive_trajectory(state_id, trace, pre_vars, agent2, agent2_a, args.k_steps,
                                                  args.contra_action_counter)
         trace.contrastive.append(contra_traj)
+        # Compute and store RD values for the contrastive trajectory.
+        # For prefix states, copy from the original trace.RD_vals where available;
+        # for appended contrastive states, compute using agent2's interface.
+        try:
+            contra_rd_list = []
+            trace_rd = getattr(trace, 'RD_vals', None)
+            for j, st in enumerate(contra_traj.states):
+                global_idx = contra_traj.start_idx + j
+                # Use original trace RD if available for this prefix state
+                if trace_rd is not None and global_idx < len(trace_rd):
+                    contra_rd_list.append(trace_rd[global_idx])
+                else:
+                    # Contrastive state -> compute RD from agent2's interface
+                    try:
+                        # st is a State object; use its .state attribute
+                        rd_val = agent2.interface.get_state_RD_action_values(agent2, getattr(st, 'state', None))
+                    except Exception:
+                        rd_val = None
+                    contra_rd_list.append(rd_val)
+            contra_traj.RD_vals = contra_rd_list
+        except Exception:
+            # best-effort: if anything fails, leave RD_vals unset
+            contra_traj.RD_vals = None
         # we do not call post_contrastive here; env2 has been consumed by contra_traj
 
         # 3) Continue original (env1) until episode end — record true future

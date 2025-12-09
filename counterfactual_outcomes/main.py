@@ -282,45 +282,74 @@ def main(args):
                 contra_rew = contra_traj.rewards[i]
             except Exception:
                 contra_rew = 'N/A' 
-            # Format reward decomposition (RD) values if available
-            def _format_rd(rd_val):
+            # Format reward decomposition (RD) values with clear labels for the chosen action
+            def _format_rd_for_action(rd_val, action_idx=None):
                 try:
                     if rd_val is None:
                         return 'RD:N/A'
-                    # Handle numpy arrays / lists
                     import numpy as _np
-                    if isinstance(rd_val, (_np.ndarray, list, tuple)):
-                        # show first few elements truncated
-                        arr = _np.asarray(rd_val).flatten()
-                        if arr.size == 0:
-                            return 'RD:[]'
-                        if arr.size > 4:
-                            return 'RD:[' + ','.join([f"{x:.2f}" for x in arr[:4]]) + ',..]'
-                        return 'RD:[' + ','.join([f"{x:.2f}" for x in arr]) + ']'
-                    # scalar
-                    return f'RD:{float(rd_val):.2f}'
+                    arr = _np.asarray(rd_val)
+                    # If arr is 1D with 3 components, assume [time, success, illegal]
+                    if arr.ndim == 1 and arr.size == 3:
+                        t, s, il = arr
+                        return f"time:{t:+.0f} succ:{s:+.0f} ill:{il:+.0f}"
+                    # If arr is 2D (n_actions x 3), pick row by action_idx if provided
+                    if arr.ndim == 2:
+                        if action_idx is None:
+                            # default to the action with max sum of components
+                            sums = arr.sum(axis=1)
+                            idx = int(_np.argmax(sums)) if sums.size > 0 else 0
+                        else:
+                            idx = int(action_idx) if action_idx is not None else 0
+                        if idx < 0 or idx >= arr.shape[0]:
+                            return 'RD:idxOOB'
+                        row = arr[idx]
+                        t, s, il = row if row.size >= 3 else (row[0], 0, 0)
+                        return f"act{idx}: time:{t:+.0f} succ:{s:+.0f} ill:{il:+.0f}"
+                    # fallback scalar
+                    if arr.size == 1:
+                        return f"RD:{float(arr):+.2f}"
+                    # otherwise, show a compact summary
+                    flat = arr.flatten()
+                    if flat.size > 4:
+                        return 'RD:[' + ','.join([f"{x:.2f}" for x in flat[:4]]) + ',..]'
+                    return 'RD:[' + ','.join([f"{x:.2f}" for x in flat]) + ']'
                 except Exception:
                     return 'RD:N/A'
 
-            # original RD
+            # original RD: try to get RD matrix and the action taken that led to this state
             orig_rd = None
             rd_vals = getattr(trace, 'RD_vals', None)
+            orig_action = None
+            try:
+                orig_action = trace.previous_actions[orig_state_idx] if getattr(trace, 'previous_actions', None) is not None else None
+            except Exception:
+                orig_action = None
             if rd_vals is not None:
                 try:
                     orig_rd = rd_vals[orig_state_idx]
                 except Exception:
                     orig_rd = None
 
-            # contrastive RD (may not be present)
+            # contrastive RD (may not be present) and action taken in contrastive traj
             contra_rd = None
+            contra_action = None
             if hasattr(contra_traj, 'RD_vals') and getattr(contra_traj, 'RD_vals') is not None:
                 try:
                     contra_rd = contra_traj.RD_vals[i]
                 except Exception:
                     contra_rd = None
+            try:
+                if hasattr(contra_traj, 'actions') and len(getattr(contra_traj, 'actions', [])) > i:
+                    contra_action = contra_traj.actions[i]
+                else:
+                    # fallback: use the original action if available
+                    contra_action = orig_action
+            except Exception:
+                contra_action = None
 
-            text1 = f"R:{orig_rew} | " + _format_rd(orig_rd)
-            text2 = f"R:{contra_rew} | " + _format_rd(contra_rd)
+            text1 = f"R:{orig_rew} | " + _format_rd_for_action(orig_rd, orig_action)
+            text2 = f"R:{contra_rew} | " + _format_rd_for_action(contra_rd, contra_action)
 
             combined_frame = hstack_frames(orig_frame, text1, contra_frame, text2)
             combined_frames.append(combined_frame)

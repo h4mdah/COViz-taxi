@@ -153,14 +153,73 @@ class TaxiInterface(AbstractInterface):
         return agent.get_state_action_values(state)
     
     def get_state_RD_action_values(self, agent, state):
-        # Try to infer action space size from the agent (SB3Adapter) or the interface
+        """
+        Return a per-action immediate reward decomposition (RD) vector for the given state.
+
+        This implementation simulates each discrete action on a deepcopy of the underlying
+        Taxi environment (or a best-effort approximation) starting from the provided
+        `state` and decomposes the immediate reward into components:
+          [time_step_component, success_component, illegal_component]
+
+        If simulation is not possible, returns a zero-array of shape (n, 3).
+        """
+        # Determine action count
         action_space = getattr(agent, 'action_space', None)
         n = getattr(action_space, 'n', None) if action_space is not None else None
         if n is None:
-            # fallback: try to read from self if available
-            n = getattr(getattr(self, 'env', None), 'action_space', None)
-            n = getattr(n, 'n', 0) if n is not None else 0
-        return np.zeros((n, 1))
+            env_as = getattr(getattr(self, 'env', None), 'action_space', None)
+            n = getattr(env_as, 'n', 0) if env_as is not None else 0
+
+        try:
+            # Locate the inner environment to simulate on (prefer unwrapped)
+            inner = getattr(self, 'env', None)
+            if inner is None:
+                return np.zeros((n, 3))
+            candidate = getattr(inner, 'unwrapped', None) or getattr(inner, 'env', None) or inner
+
+            # Try to infer internal state value `s` from the provided state/observation
+            s_val = None
+            try:
+                if isinstance(state, (int,)):
+                    s_val = int(state)
+                elif isinstance(state, (list, tuple,)) and len(state) > 0 and isinstance(state[0], (int,)):
+                    s_val = int(state[0])
+                elif hasattr(candidate, 's'):
+                    s_val = getattr(candidate, 's', None)
+            except Exception:
+                s_val = getattr(candidate, 's', None) if hasattr(candidate, 's') else None
+
+            rd_list = []
+            for a in range(int(n)):
+                try:
+                    # Operate on a deepcopy so we don't change the real env
+                    tmp = deepcopy(candidate)
+                    # If we could infer s, set it on the temp env
+                    if s_val is not None:
+                        try:
+                            setattr(tmp, 's', s_val)
+                        except Exception:
+                            pass
+
+                    out = tmp.step(a)
+                    if isinstance(out, tuple) and len(out) >= 2:
+                        r = out[1]
+                    else:
+                        # fallback if step returns scalar
+                        r = float(out)
+
+                    # Decompose reward according to Taxi-v3 rules
+                    time_comp = -1 if r == -1 else 0
+                    success_comp = 20 if r == 20 else 0
+                    illegal_comp = -10 if r == -10 else 0
+                    rd_list.append([time_comp, success_comp, illegal_comp])
+                except Exception:
+                    # If any simulation fails, append zeros for this action
+                    rd_list.append([0, 0, 0])
+
+            return np.asarray(rd_list)
+        except Exception:
+            return np.zeros((n, 3))
     
     def get_state_from_obs(self, agent, obs, params=None):
         return obs
