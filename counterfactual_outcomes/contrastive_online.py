@@ -67,7 +67,6 @@ def get_contrastive_trajectory(state_id, trace, env, agent, contra_action, k_ste
     traj.get_contrastive_trajectory(env, agent, state_id, contra_action, contra_counter)
     return traj
 
-@profile
 def online_comparison(env1, agent1, env2, agent2, args, evaluation1=None, evaluation2=None):
     """
     get all contrastive trajectories a given agent

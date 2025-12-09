@@ -271,6 +271,7 @@ def main(args):
         for i in range(n_steps):
             orig_state_idx = indxs[i]
             orig_frame = trace.states[orig_state_idx].image
+            
             try:
                 orig_rew = trace.rewards[orig_state_idx]
             except Exception:
@@ -281,8 +282,47 @@ def main(args):
                 contra_rew = contra_traj.rewards[i]
             except Exception:
                 contra_rew = 'N/A' 
-            
-            combined_frame = hstack_frames(orig_frame, str(orig_rew), contra_frame, str(contra_rew))
+            # Format reward decomposition (RD) values if available
+            def _format_rd(rd_val):
+                try:
+                    if rd_val is None:
+                        return 'RD:N/A'
+                    # Handle numpy arrays / lists
+                    import numpy as _np
+                    if isinstance(rd_val, (_np.ndarray, list, tuple)):
+                        # show first few elements truncated
+                        arr = _np.asarray(rd_val).flatten()
+                        if arr.size == 0:
+                            return 'RD:[]'
+                        if arr.size > 4:
+                            return 'RD:[' + ','.join([f"{x:.2f}" for x in arr[:4]]) + ',..]'
+                        return 'RD:[' + ','.join([f"{x:.2f}" for x in arr]) + ']'
+                    # scalar
+                    return f'RD:{float(rd_val):.2f}'
+                except Exception:
+                    return 'RD:N/A'
+
+            # original RD
+            orig_rd = None
+            rd_vals = getattr(trace, 'RD_vals', None)
+            if rd_vals is not None:
+                try:
+                    orig_rd = rd_vals[orig_state_idx]
+                except Exception:
+                    orig_rd = None
+
+            # contrastive RD (may not be present)
+            contra_rd = None
+            if hasattr(contra_traj, 'RD_vals') and getattr(contra_traj, 'RD_vals') is not None:
+                try:
+                    contra_rd = contra_traj.RD_vals[i]
+                except Exception:
+                    contra_rd = None
+
+            text1 = f"R:{orig_rew} | " + _format_rd(orig_rd)
+            text2 = f"R:{contra_rew} | " + _format_rd(contra_rd)
+
+            combined_frame = hstack_frames(orig_frame, text1, contra_frame, text2)
             combined_frames.append(combined_frame)
         
         highlight_frames_combined[hl_id] = combined_frames

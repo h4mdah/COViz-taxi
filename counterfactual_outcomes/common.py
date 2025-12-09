@@ -192,14 +192,21 @@ def clean_dir(path, file_type=''):
 
 def create_highlights_videos(frames_dir, video_dir, n_HLs, size, fps, pause=None):
     make_clean_dirs(video_dir)
+    total_frames = 0
     for hl in range(n_HLs):
         hl_str = str(hl) if hl > 9 else "0" + str(hl)
-        img_array = []
         file_list = sorted(
             [x for x in glob.glob(frames_dir + "/*.png") if x.split('/')[-1].startswith(hl_str)])
-        if file_list:
-            first_frame = cv2.imread(file_list[0])
-            common_size = (first_frame.shape[1], first_frame.shape[0])
+
+        # If there are no frames for this highlight, skip
+        if not file_list:
+            continue
+
+        # Determine common size from the first frame
+        first_frame = cv2.imread(file_list[0])
+        common_size = (first_frame.shape[1], first_frame.shape[0])
+
+        img_array = []
         for i, f in enumerate(file_list):
             img = cv2.imread(f)
             # Resize the frame to the common size
@@ -213,7 +220,8 @@ def create_highlights_videos(frames_dir, video_dir, n_HLs, size, fps, pause=None
         for i in range(len(img_array)):
             out.write(img_array[i])
         out.release()
-    return len(img_array)
+        total_frames = len(img_array)
+    return total_frames
 
 
 def save_image(path, name, img):

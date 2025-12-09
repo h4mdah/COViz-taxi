@@ -1,136 +1,180 @@
-from os.path import abspath
+import sys
+import pathlib
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 import logging
-import imageio
-from pathlib import Path
+import numpy as np
+from tqdm import trange
+from memory_profiler import profile
 
 from counterfactual_outcomes.common import log_msg, save_traces
 from counterfactual_outcomes.common import State
 from counterfactual_outcomes.contrastive_online import get_contrastive_trajectory
-import counterfactual_outcomes.contrastive_online as co_module
-
-
-def print_env_interface_info(agent, env):
-    try:
-        print("=== Agent Interface / Environment ===")
-        print(f"agent.interface type: {type(getattr(agent, 'interface', agent))}")
-        try:
-            cfg = getattr(agent.interface, 'config', None)
-            print(f"interface.config: {cfg}")
-        except Exception:
-            pass
-        try:
-            print(f"env repr: {repr(env)}")
-            inner = getattr(env, 'unwrapped', None) or getattr(env, 'env', None) or env
-            print(f"unwrapped type: {type(inner)}")
-            if hasattr(inner, 'decode'):
-                print("env has 'decode' (Taxi-like)")
-            if hasattr(inner, 's'):
-                print(f"inner.s example: {getattr(inner, 's', None)}")
-            print(f"observation_space: {getattr(env, 'observation_space', None)}")
-            print(f"action_space: {getattr(env, 'action_space', None)}")
-        except Exception:
-            pass
-        print("=== End Agent Interface / Environment ===")
-    except Exception:
-        print("Failed to print agent/interface info")
 
 
 def online_comparison_RD(env1, agent1, env2, agent2, args, evaluation1=None, evaluation2=None):
     """
-    get all contrastive trajectories a given agent
+    Get all contrastive trajectories for a given agent, collecting reward decomposition data.
+    Uses the same structure as contrastive_online but additionally stores RD action values.
     """
-    """Run"""
-    traces, reward_decomps = [], []
-    # Print interface/env details once before generating traces (before per-trace logs)
-    if getattr(args, 'verbose', True):
-        print_env_interface_info(agent1, env1)
-    # prepare frames root and set it in the contrastive_online module so contrastive calls
-    # also write into the same folder
-    try:
-        frames_root = Path(args.output_dir) / 'trace_images'
-        frames_root.mkdir(parents=True, exist_ok=True)
-        co_module.FRAMES_ROOT = frames_root
-    except Exception:
-        co_module.FRAMES_ROOT = None
-    for n in range(args.n_traces):
-        log_msg(f'Executing Trace number: {n}', args.verbose)
-        trace = agent1.interface.contrastive_trace(n, args.k_steps)
-        rd_vals = []
+    traces = []
+    rd_values = []  # Store RD action values for all states across all traces
+    
+    # Use a single trange progress bar and update its description per-iteration.
+    pbar = trange(args.n_traces, desc="Traces", unit="trace")
+    for t in pbar:
+        # Update the bar description instead of printing a new line each iteration
+        pbar.set_description(f"Trace {t+1}/{args.n_traces}")
+        trace = agent1.interface.contrastive_trace(t, args.k_steps)
+        trace_rd_vals = []  # Collect RD values for this trace
+        
         """initial state"""
         res1 = env1.reset()
         res2 = env2.reset()
-        # gymnasium may return (obs, info); extract observation for compatibility
         obs = res1[0] if isinstance(res1, tuple) else res1
         _obs = res2[0] if isinstance(res2, tuple) else res2
-        # If environments don't start identically, warn and continue using env1's obs
         if not (getattr(obs, 'tolist', None) and getattr(_obs, 'tolist', None) and obs.tolist() == _obs.tolist()):
             log_msg('Warning: initial observations differ between env1 and env2; continuing', args.verbose)
             _obs = obs
         step, r, done, infos, agent1_a = 0, 0, False, {}, None
         agent1.previous_state = agent2.previous_state = obs  # required
 
-        # for _ in range(30):  # TODO remove
-        while not done:
-            logging.debug(f'time-step number: {step}')
+        # Implement optional lockstep prefix before forking contrastive
+        sync_prefix = int(getattr(args, 'sync_prefix', 0) or 0)
+
+        # 1) Run prefix steps in lockstep using agent1's action for both envs
+        while not done and step < sync_prefix:
+            logging.debug(f'prefix time-step number: {step}')
             state = agent1.interface.get_state_from_obs(agent1, obs, [r, done])
             s_a_values = agent1.interface.get_state_action_values(agent1, state)
-            rd_vals.append(agent1.interface.get_state_RD_action_values(agent1, state))
-            state_id = (n, step)
-            frame = None
-            try:
-                frame = env1.render(mode='rgb_array')
-            except Exception:
-                try:
-                    frame = env1.render()
-                except Exception:
-                    frame = None
-            image_path = None
-            try:
-                if frame is not None and co_module.FRAMES_ROOT is not None:
-                    trace_dir = Path(co_module.FRAMES_ROOT) / f"trace_{n}"
-                    trace_dir.mkdir(parents=True, exist_ok=True)
-                    img_name = f"trace_{n}_state_{step:04d}.png"
-                    image_path = trace_dir / img_name
-                    imageio.imwrite(str(image_path), frame.astype('uint8') if hasattr(frame, 'astype') else frame)
-            except Exception:
-                image_path = None
-            features = agent1.interface.get_features(env1)
-            state_obj = State(state_id, obs, state, s_a_values, None, features)
-            state_obj.image_path = str(image_path) if image_path is not None else None
+            rd_action_values = agent1.interface.get_state_RD_action_values(agent1, state)
+            trace_rd_vals.append(rd_action_values)
+            
+            state_id, frame = (t, step), env1.render()
+            features = agent1.interface.get_features(env1, obs)
+            state_obj = State(state_id, obs, state, s_a_values, frame, features)
+            # previous action (agent1_a) is the action that led to this state
             trace.update(state_obj, obs, r, done, infos, agent1_a, state_id)
-            """actions"""
+            # keep contrastive list aligned with states
+            trace.contrastive.append(None)
+
+            # both agents take agent1's action during prefix
             agent1_a = agent1.interface.get_next_action(agent1, obs, state) if not done else None
-            agent2_a = sorted(list(enumerate(s_a_values)), key=lambda x: x[1])[-2][0]
-            """contrastive trajectory"""
-            pre_vars = agent2.interface.pre_contrastive(env1)
-            trace.contrastive.append(
-                get_contrastive_trajectory(state_id, trace, env2, agent2, agent2_a, args.k_steps,
-                                           args.contra_action_counter))
-            """return agent 2 environment to the current state"""
-            env2 = agent2.interface.post_contrastive(agent1, agent2, pre_vars)
-            """Transition both agent's based on agent 1 action"""
+            agent1.previous_state = agent2.previous_state = obs
+
             step += 1
             out = env1.step(agent1_a)
-            # gymnasium step may return (obs, reward, terminated, truncated, info)
             if isinstance(out, tuple) and len(out) == 5:
                 obs, r, terminated, truncated, info = out
                 done = bool(terminated or truncated)
             else:
                 obs, r, done, info = out
-            if done: break
-            out2 = env2.step(agent1_a)  # dont need returned values beyond obs for comparison
+            if done:
+                break
+            out2 = env2.step(agent1_a)
             obs2 = out2[0] if isinstance(out2, tuple) else out2
-            # ensure arrays are comparable; if they differ, warn and continue using env1 obs
             if getattr(obs, 'tolist', None) and getattr(obs2, 'tolist', None):
                 if obs.tolist() != obs2.tolist():
                     log_msg('Warning: environment transition produced different observations; continuing', args.verbose)
                     obs2 = obs
 
+        # if episode ended during prefix, finish this trace
+        if done:
+            trace.RD_vals = trace_rd_vals
+            traces.append(trace)
+            rd_values.append(trace_rd_vals)
+            continue
+
+        # 2) At fork time-step: create fork state and contrastive trajectory
+        logging.debug(f'fork at time-step: {step}')
+        state = agent1.interface.get_state_from_obs(agent1, obs, [r, done])
+        s_a_values = agent1.interface.get_state_action_values(agent1, state)
+        rd_action_values = agent1.interface.get_state_RD_action_values(agent1, state)
+        trace_rd_vals.append(rd_action_values)
+        
+        state_id, frame = (t, step), env1.render()
+        features = agent1.interface.get_features(env1, obs)
+        state_obj = State(state_id, obs, state, s_a_values, frame, features)
+        # update trace with fork state (previous action is agent1_a)
+        trace.update(state_obj, obs, r, done, infos, agent1_a, state_id)
+        
+        # derive contrastive action for agent2 (reuse robust logic)
+        try:
+            vals = np.asarray(s_a_values)
+            if vals.size == 0 or np.allclose(vals, vals.flat[0]):
+                n_actions = vals.size if vals.size > 0 else getattr(getattr(agent1, 'action_space', None), 'n', None)
+                if n_actions is None or n_actions == 0:
+                    agent2_pref = agent2.interface.get_next_action(agent2, obs, state)
+                    agent2_a = agent2_pref if agent2_pref is not None else 0
+                else:
+                    base = agent1_a if agent1_a is not None else 0
+                    agent2_a = (base + 1) % int(n_actions)
+            else:
+                agent2_a = sorted(list(enumerate(vals)), key=lambda x: x[1])[-2][0]
+        except Exception:
+            try:
+                agent2_a = agent2.interface.get_next_action(agent2, obs, state)
+            except Exception:
+                agent2_a = 0
+
+        # create contrastive trajectory from env2 starting at this fork state
+        pre_vars = agent2.interface.pre_contrastive(env1)
+        contra_traj = get_contrastive_trajectory(state_id, trace, pre_vars, agent2, agent2_a, args.k_steps,
+                                                 args.contra_action_counter)
+        trace.contrastive.append(contra_traj)
+        # we do not call post_contrastive here; env2 has been consumed by contra_traj
+
+        # 3) Continue original (env1) until episode end — record true future
+        # ensure agent1 has a valid action for the fork step
+        if agent1_a is None:
+            try:
+                agent1_a = agent1.interface.get_next_action(agent1, obs, state)
+            except Exception:
+                # fallback to 0 if action cannot be computed
+                agent1_a = 0
+        step += 1
+        out = env1.step(agent1_a)
+        if isinstance(out, tuple) and len(out) == 5:
+            obs, r, terminated, truncated, info = out
+            done = bool(terminated or truncated)
+        else:
+            obs, r, done, info = out
+        
+        # continue remaining episode steps for env1
+        if not done:
+            while not done:
+                logging.debug(f'post-fork env1 time-step: {step}')
+                state = agent1.interface.get_state_from_obs(agent1, obs, [r, done])
+                s_a_values = agent1.interface.get_state_action_values(agent1, state)
+                rd_action_values = agent1.interface.get_state_RD_action_values(agent1, state)
+                trace_rd_vals.append(rd_action_values)
+                
+                state_id, frame = (t, step), env1.render()
+                features = agent1.interface.get_features(env1, obs)
+                state_obj = State(state_id, obs, state, s_a_values, frame, features)
+                trace.update(state_obj, obs, r, done, infos, agent1_a, state_id)
+                trace.contrastive.append(None)
+
+                agent1_a = agent1.interface.get_next_action(agent1, obs, state) if not done else None
+                step += 1
+                out = env1.step(agent1_a)
+                if isinstance(out, tuple) and len(out) == 5:
+                    obs, r, terminated, truncated, info = out
+                    done = bool(terminated or truncated)
+                else:
+                    obs, r, done, info = out
+        else:
+            # if done immediately after fork, just finish
+            pass
+
         """end of episode"""
+        trace.RD_vals = trace_rd_vals
         traces.append(trace)
-        trace.RD_vals = rd_vals
-        reward_decomps.append(rd_vals)
-    """save RD traces"""
-    save_traces(reward_decomps, args.output_dir, name='RD_Values.pkl')
-    save_traces(traces, abspath('results'), name='RD_Values.pkl')
+        rd_values.append(trace_rd_vals)
+    
+    """save traces and RD values"""
+    save_traces(traces, REPO_ROOT / 'results', name='Traces_RD.pkl')
+    save_traces(rd_values, REPO_ROOT / 'results', name='RD_Values.pkl')
     return traces
