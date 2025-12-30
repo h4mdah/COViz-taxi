@@ -611,7 +611,8 @@ def create_hist_bar_bgr(frame_width, left_rewards, right_rewards, hist_h=110, bi
             # draw empty outline
             _cv.rectangle(bar, (region_x + padding, padding), (region_x + padding + region_w, padding + region_h), (200,200,200), 1)
             mean_val = float('nan')
-            return mean_val
+            count = 0
+            return mean_val, count
 
         hist, edges = _np.histogram(arr, bins=bins)
         maxc = int(hist.max()) if hist.max() > 0 else 1
@@ -625,10 +626,11 @@ def create_hist_bar_bgr(frame_width, left_rewards, right_rewards, hist_h=110, bi
             b, g, r = int(color[0]), int(color[1]), int(color[2])
             _cv.rectangle(bar, (x1, y1), (min(x2, region_x + padding + region_w - 1), y2), (b, g, r), -1)
         mean_val = float(_np.mean(arr))
-        return mean_val
+        count = int(arr.size)
+        return mean_val, count
 
-    left_mean = _draw_hist_on_region(0, left_rewards, left_color)
-    right_mean = _draw_hist_on_region(half, right_rewards, right_color)
+    left_mean, left_count = _draw_hist_on_region(0, left_rewards, left_color)
+    right_mean, right_count = _draw_hist_on_region(half, right_rewards, right_color)
 
     # draw vertical separator line
     _cv.line(bar, (half, padding), (half, H - padding - 18), (220, 220, 220), 1)
@@ -637,23 +639,23 @@ def create_hist_bar_bgr(frame_width, left_rewards, right_rewards, hist_h=110, bi
     font = _cv.FONT_HERSHEY_SIMPLEX
     label_y = H - padding - 2
     if not _np.isnan(left_mean):
-        left_text = f"µ={left_mean:+.2f}"
+        left_text = f"mu={left_mean:+.2f} n={left_count}"
         (tw, th), _ = _cv.getTextSize(left_text, font, font_scale, thickness)
         text_x = (half // 2) - (tw // 2)
         _cv.putText(bar, left_text, (text_x, label_y), font, font_scale, label_color, thickness, _cv.LINE_AA)
     else:
-        left_text = "µ=NA"
+        left_text = "mu=NA n=0"
         (tw, th), _ = _cv.getTextSize(left_text, font, font_scale, thickness)
         text_x = (half // 2) - (tw // 2)
         _cv.putText(bar, left_text, (text_x, label_y), font, font_scale, (120,120,120), thickness, _cv.LINE_AA)
 
     if not _np.isnan(right_mean):
-        right_text = f"µ={right_mean:+.2f}"
+        right_text = f"mu={right_mean:+.2f} n={right_count}"
         (tw, th), _ = _cv.getTextSize(right_text, font, font_scale, thickness)
         text_x = half + (half // 2) - (tw // 2)
         _cv.putText(bar, right_text, (text_x, label_y), font, font_scale, label_color, thickness, _cv.LINE_AA)
     else:
-        right_text = "µ=NA"
+        right_text = "mu=NA n=0"
         (tw, th), _ = _cv.getTextSize(right_text, font, font_scale, thickness)
         text_x = half + (half // 2) - (tw // 2)
         _cv.putText(bar, right_text, (text_x, label_y), font, font_scale, (120,120,120), thickness, _cv.LINE_AA)
