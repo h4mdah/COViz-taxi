@@ -195,8 +195,8 @@ def create_highlights_videos(frames_dir, video_dir, n_HLs, size, fps, pause=None
     total_frames = 0
     for hl in range(n_HLs):
         hl_str = str(hl) if hl > 9 else "0" + str(hl)
-        file_list = sorted(
-            [x for x in glob.glob(frames_dir + "/*.png") if x.split('/')[-1].startswith(hl_str)])
+        pattern = os.path.join(frames_dir, "*.png")
+        file_list = sorted([x for x in glob.glob(pattern) if os.path.basename(x).startswith(hl_str)])
 
         # If there are no frames for this highlight, skip
         if not file_list:
@@ -483,6 +483,182 @@ def hstack_frames(img1, text1, img2, text2):
     combined_img = cv2.hconcat([final_img1, final_img2])
     
     return combined_img
+
+
+def cv_histogram_rgba(rewards, size=(220, 110), bins=12, bar_color=(50, 180, 50)):
+    """Create a compact RGBA histogram image using OpenCV only.
+    - `rewards` should be an iterable of numeric values. Non-finite values are ignored.
+    - returns uint8 RGBA numpy array with transparent background.
+    """
+    import numpy as _np
+    import cv2 as _cv
+
+    w, h = size
+    out = _np.zeros((h, w, 4), dtype=_np.uint8)
+    try:
+        arr = _np.asarray(rewards, dtype=float)
+        arr = arr[_np.isfinite(arr)]
+    except Exception:
+        arr = _np.array([], dtype=float)
+
+    if arr.size == 0:
+        return out
+
+    hist, edges = _np.histogram(arr, bins=bins)
+    maxc = int(hist.max()) if hist.max() > 0 else 1
+    bar_w = max(1, w // bins)
+    padding = 4
+    for i, val in enumerate(hist):
+        bar_h = int((val / maxc) * (h - padding * 2))
+        x1 = i * bar_w + padding
+        y1 = h - padding - bar_h
+        x2 = min(w - padding, x1 + bar_w - 2)
+        y2 = h - padding
+        b, g, r = int(bar_color[0]), int(bar_color[1]), int(bar_color[2])
+        _cv.rectangle(out, (x1, y1), (x2, y2), (b, g, r, 255), -1)
+    return out
+
+
+def overlay_rgba_on_bgr(frame_bgr, overlay_rgba, pos=(10, 10)):
+    """Alpha-blend an RGBA overlay into a BGR frame at pos (x,y). Returns modified frame (copy).
+    Both inputs are numpy arrays (uint8).
+    """
+    import numpy as _np
+
+    if overlay_rgba is None:
+        return frame_bgr
+    out = frame_bgr.copy()
+    h, w = out.shape[:2]
+    oh, ow = overlay_rgba.shape[:2]
+    x, y = pos
+    # clamp region
+    if x < 0:
+        overlay_rgba = overlay_rgba[:, -x:]
+        ow = overlay_rgba.shape[1]
+        x = 0
+    if y < 0:
+        overlay_rgba = overlay_rgba[-y:, :]
+        oh = overlay_rgba.shape[0]
+        y = 0
+    if x >= w or y >= h:
+        return out
+    end_x = min(w, x + ow)
+    end_y = min(h, y + oh)
+    roi_w = end_x - x
+    roi_h = end_y - y
+    if roi_w <= 0 or roi_h <= 0:
+        return out
+
+    roi = out[y:end_y, x:end_x].astype('float32')
+    overlay = overlay_rgba[0:roi_h, 0:roi_w].astype('float32')
+    alpha = overlay[:, :, 3:4] / 255.0
+    rgb_overlay = overlay[:, :, :3]
+    blended = (1.0 - alpha) * roi + alpha * rgb_overlay[:, :, ::-1]
+    out[y:end_y, x:end_x] = blended.astype('uint8')
+    return out
+
+
+def mark_right_half_counterfactual(frame_bgr, is_counterfactual=False, color=(0, 0, 255), thickness=6, tint_alpha=0.12):
+    """Mark the right half of a combined (left|right) frame as counterfactual.
+    - If `is_counterfactual` True, draws a border on the right half and applies a slight tint.
+    - color is BGR tuple.
+    """
+    import numpy as _np
+    import cv2 as _cv
+
+    out = frame_bgr.copy()
+    h, w = out.shape[:2]
+    half = w // 2
+    if not is_counterfactual:
+        return out
+    # draw border around right half
+    _cv.rectangle(out, (half, 0), (w - 1, h - 1), color, thickness)
+    # apply tint
+    tint = _np.full((h, w - half, 3), color, dtype='uint8')
+    alpha = float(tint_alpha)
+    right = out[:, half:w].astype('float32')
+    blended = (1 - alpha) * right + alpha * tint.astype('float32')
+    out[:, half:w] = blended.astype('uint8')
+    return out
+
+
+def create_hist_bar_bgr(frame_width, left_rewards, right_rewards, hist_h=110, bins=12,
+                        left_color=(50, 180, 50), right_color=(180, 50, 50), padding=8,
+                        label_color=(0, 0, 0), font_scale=0.5, thickness=1):
+    """Create a white BGR bar (height `hist_h`) containing two histograms (left/right halves)
+    and numeric mean labels below each histogram. Returns a BGR uint8 image.
+    """
+    import numpy as _np
+    import cv2 as _cv
+
+    W = int(frame_width)
+    H = int(hist_h)
+    bar = _np.full((H, W, 3), 255, dtype=_np.uint8)
+    half = W // 2
+
+    def _draw_hist_on_region(region_x, rewards, color):
+        # region: x start, width = half
+        region_w = half - padding * 2
+        region_h = H - padding * 2 - 18  # reserve space for label text
+        if region_w <= 8 or region_h <= 8:
+            return
+        try:
+            arr = _np.asarray(rewards, dtype=float)
+            arr = arr[_np.isfinite(arr)]
+        except Exception:
+            arr = _np.array([], dtype=float)
+        if arr.size == 0:
+            # draw empty outline
+            _cv.rectangle(bar, (region_x + padding, padding), (region_x + padding + region_w, padding + region_h), (200,200,200), 1)
+            mean_val = float('nan')
+            return mean_val
+
+        hist, edges = _np.histogram(arr, bins=bins)
+        maxc = int(hist.max()) if hist.max() > 0 else 1
+        bw = max(1, region_w // bins)
+        for i, val in enumerate(hist):
+            bar_h = int((val / maxc) * (region_h))
+            x1 = region_x + padding + i * bw
+            y1 = padding + (region_h - bar_h)
+            x2 = x1 + bw - 1
+            y2 = padding + region_h - 1
+            b, g, r = int(color[0]), int(color[1]), int(color[2])
+            _cv.rectangle(bar, (x1, y1), (min(x2, region_x + padding + region_w - 1), y2), (b, g, r), -1)
+        mean_val = float(_np.mean(arr))
+        return mean_val
+
+    left_mean = _draw_hist_on_region(0, left_rewards, left_color)
+    right_mean = _draw_hist_on_region(half, right_rewards, right_color)
+
+    # draw vertical separator line
+    _cv.line(bar, (half, padding), (half, H - padding - 18), (220, 220, 220), 1)
+
+    # draw mean labels centered under each histogram
+    font = _cv.FONT_HERSHEY_SIMPLEX
+    label_y = H - padding - 2
+    if not _np.isnan(left_mean):
+        left_text = f"µ={left_mean:+.2f}"
+        (tw, th), _ = _cv.getTextSize(left_text, font, font_scale, thickness)
+        text_x = (half // 2) - (tw // 2)
+        _cv.putText(bar, left_text, (text_x, label_y), font, font_scale, label_color, thickness, _cv.LINE_AA)
+    else:
+        left_text = "µ=NA"
+        (tw, th), _ = _cv.getTextSize(left_text, font, font_scale, thickness)
+        text_x = (half // 2) - (tw // 2)
+        _cv.putText(bar, left_text, (text_x, label_y), font, font_scale, (120,120,120), thickness, _cv.LINE_AA)
+
+    if not _np.isnan(right_mean):
+        right_text = f"µ={right_mean:+.2f}"
+        (tw, th), _ = _cv.getTextSize(right_text, font, font_scale, thickness)
+        text_x = half + (half // 2) - (tw // 2)
+        _cv.putText(bar, right_text, (text_x, label_y), font, font_scale, label_color, thickness, _cv.LINE_AA)
+    else:
+        right_text = "µ=NA"
+        (tw, th), _ = _cv.getTextSize(right_text, font, font_scale, thickness)
+        text_x = half + (half // 2) - (tw // 2)
+        _cv.putText(bar, right_text, (text_x, label_y), font, font_scale, (120,120,120), thickness, _cv.LINE_AA)
+
+    return bar
 
 def load_trace_from_file(file_path, trace_idx=None):
     """Load a single trace (converted to Trace object) from a Traces.pkl file.

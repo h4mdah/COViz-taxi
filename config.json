@@ -1,6 +1,6 @@
 {
     "traces_path": null,
-    "n_traces": 1,
+    "n_traces": 5,
     "state_importance": "second",
     "verbose": true,
     "k_steps": 5,
@@ -19,7 +19,8 @@
     "contra_action_counter": 0,
     "min_traj_len": 1,
     "no_mark": false,
-    "multi_head": false,
+    "multi_head": true,
     "model_dir": "C:\\Users\\hmari\\Desktop\\THI_KI\\S5\\COViz-taxi\\agents\\taxi_sb3\\",
-    "sync_prefix": 4
+    "sync_prefix": 4,
+    "dump_env_diff": true
 }

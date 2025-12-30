@@ -20,7 +20,8 @@ from pathlib import Path
 import pickle
 
 from counterfactual_outcomes.common import save_traces, log_msg, load_traces, \
-    get_highlight_traj_indxs, save_highlights, save_frames, hstack_frames
+    get_highlight_traj_indxs, save_highlights, save_frames, hstack_frames, \
+    cv_histogram_rgba, overlay_rgba_on_bgr, mark_right_half_counterfactual, create_hist_bar_bgr
 from counterfactual_outcomes.contrastive_online import online_comparison
 from counterfactual_outcomes.contrastive_online_RD import online_comparison_RD
 from counterfactual_outcomes.get_agent import get_config, get_agent
@@ -352,6 +353,54 @@ def main(args):
             text2 = f"R:{contra_rew} | " + _format_rd_for_action(contra_rd, contra_action)
 
             combined_frame = hstack_frames(orig_frame, text1, contra_frame, text2)
+
+            # --- Overlay per-side rewards histogram and mark counterfactual half ---
+            try:
+                # choose window size (use args.hist_window if provided, else default)
+                hist_window = getattr(args, 'hist_window', 20)
+                # original rewards window: up to the original state index
+                try:
+                    orig_rewards_all = getattr(trace, 'rewards', []) or []
+                    orig_rewards = orig_rewards_all[max(0, orig_state_idx - hist_window + 1): orig_state_idx + 1]
+                except Exception:
+                    orig_rewards = []
+
+                # contrastive rewards window: up to index i in contrastive traj
+                try:
+                    contra_rewards_all = getattr(contra_traj, 'rewards', []) or []
+                    contra_rewards = contra_rewards_all[max(0, i - hist_window + 1): i + 1]
+                except Exception:
+                    contra_rewards = []
+
+                H, W = combined_frame.shape[:2]
+                half_w = W // 2
+                hist_h = max(30, int(H * 0.16))
+                hist_w = max(80, int(half_w * 0.42))
+
+                # create a white histogram bar above the combined frame and label with mean values
+                try:
+                    top_bar = create_hist_bar_bgr(W, orig_rewards, contra_rewards, hist_h=hist_h, bins=12,
+                                                  left_color=(50, 180, 50), right_color=(180, 50, 50))
+                    # place the bar above the game frame
+                    import numpy as _np
+                    combined_frame = _np.vstack([top_bar, combined_frame])
+                except Exception:
+                    # if histogram creation fails, keep original combined_frame
+                    pass
+
+                # mark right half as counterfactual starting from the fork (s_idx)
+                is_cf = False
+                try:
+                    is_cf = (orig_state_idx >= s_idx)
+                except Exception:
+                    is_cf = False
+
+                combined_frame = mark_right_half_counterfactual(combined_frame, is_counterfactual=is_cf,
+                                                                color=(0, 0, 255), thickness=6, tint_alpha=0.12)
+            except Exception:
+                # best-effort: if overlay fails, continue with unmodified combined_frame
+                pass
+
             combined_frames.append(combined_frame)
         
         highlight_frames_combined[hl_id] = combined_frames
