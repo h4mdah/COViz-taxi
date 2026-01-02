@@ -21,7 +21,7 @@ import pickle
 
 from counterfactual_outcomes.common import save_traces, log_msg, load_traces, \
     get_highlight_traj_indxs, save_highlights, save_frames, hstack_frames, \
-    cv_histogram_rgba, overlay_rgba_on_bgr, mark_right_half_counterfactual, create_hist_bar_bgr
+     mark_right_half_counterfactual, create_hist_bar_bgr
 from counterfactual_outcomes.contrastive_online import online_comparison
 from counterfactual_outcomes.contrastive_online_RD import online_comparison_RD
 from counterfactual_outcomes.get_agent import get_config, get_agent
@@ -379,8 +379,49 @@ def main(args):
 
                 # create a white histogram bar above the combined frame and label with mean values
                 try:
+                    # collect metadata from args.config or args
+                    def _get_cfg_value(cfg, keys):
+                        if cfg is None:
+                            return None
+                        try:
+                            for k in keys:
+                                if isinstance(cfg, dict) and k in cfg and cfg[k]:
+                                    return cfg[k]
+                        except Exception:
+                            pass
+                        try:
+                            for k in keys:
+                                v = getattr(cfg, k, None)
+                                if v:
+                                    return v
+                        except Exception:
+                            pass
+                        return None
+
+                    cfg = getattr(args, 'config', None)
+                    algo = _get_cfg_value(cfg, ['algorithm', 'algo', 'agent_algorithm', 'policy']) or getattr(args, 'agent', None) or ''
+                    framework = _get_cfg_value(cfg, ['framework', 'backend', 'lib']) or getattr(args, 'framework', None) or ''
+                    env_name = _get_cfg_value(cfg, ['env_id', 'env', 'environment']) or getattr(args, 'env_id', None) or getattr(args, 'interface', '')
+                    steps = _get_cfg_value(cfg, ['train_steps', 'n_steps', 'steps', 'timesteps']) or getattr(args, 'train_steps', None) or ''
+                    model_file = os.path.basename(getattr(args, 'load_path', '') or '')
+                    meta_lines = []
+                    if algo:
+                        meta_lines.append(str(f"Algo: {algo}"))
+                    if framework:
+                        meta_lines.append(str(f"Framework: {framework}"))
+                    if env_name:
+                        meta_lines.append(str(f"Env: {env_name}"))
+                    if steps:
+                        meta_lines.append(str(f"Trained steps: {steps}"))
+                    if model_file:
+                        meta_lines.append(str(f"Model: {model_file}"))
+                    # cap metadata lines to avoid overflowing the bar
+                    if meta_lines:
+                        meta_lines = meta_lines[:3]
+
                     top_bar = create_hist_bar_bgr(W, orig_rewards, contra_rewards, hist_h=hist_h, bins=12,
-                                                  left_color=(50, 180, 50), right_color=(180, 50, 50))
+                                                  left_color=(50, 180, 50), right_color=(180, 50, 50),
+                                                  metadata_lines=meta_lines)
                     # place the bar above the game frame
                     import numpy as _np
                     combined_frame = _np.vstack([top_bar, combined_frame])

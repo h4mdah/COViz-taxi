@@ -246,34 +246,34 @@ def log_msg(msg, verbose=True):
     logging.info(msg)
 
 
-def append_trace_singlefile(path, trace):
-    """Append a single pickled trace object to `path` (binary append).
+# def append_trace_singlefile(path, trace):
+#     """Append a single pickled trace object to `path` (binary append).
 
-    The file will contain multiple consecutive pickle objects and can be
-    read back with `load_traces_multiobject`.
-    """
-    try:
-        d = os.path.dirname(path)
-        if d:
-            os.makedirs(d, exist_ok=True)
-        with open(path, 'ab') as f:
-            pickle.dump(trace, f, protocol=pickle.HIGHEST_PROTOCOL)
-    except Exception:
-        # best-effort: if append fails, try atomic temp write then append
-        try:
-            import tempfile
-            fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path) or '.')
-            os.close(fd)
-            with open(tmp, 'wb') as t:
-                pickle.dump(trace, t, protocol=pickle.HIGHEST_PROTOCOL)
-            with open(tmp, 'rb') as t, open(path, 'ab') as f:
-                f.write(t.read())
-            try:
-                os.remove(tmp)
-            except Exception:
-                pass
-        except Exception:
-            pass
+#     The file will contain multiple consecutive pickle objects and can be
+#     read back with `load_traces_multiobject`.
+#     """
+#     try:
+#         d = os.path.dirname(path)
+#         if d:
+#             os.makedirs(d, exist_ok=True)
+#         with open(path, 'ab') as f:
+#             pickle.dump(trace, f, protocol=pickle.HIGHEST_PROTOCOL)
+#     except Exception:
+#         # best-effort: if append fails, try atomic temp write then append
+#         try:
+#             import tempfile
+#             fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path) or '.')
+#             os.close(fd)
+#             with open(tmp, 'wb') as t:
+#                 pickle.dump(trace, t, protocol=pickle.HIGHEST_PROTOCOL)
+#             with open(tmp, 'rb') as t, open(path, 'ab') as f:
+#                 f.write(t.read())
+#             try:
+#                 os.remove(tmp)
+#             except Exception:
+#                 pass
+#         except Exception:
+#             pass
 
 
 def load_traces_multiobject(path):
@@ -484,80 +484,6 @@ def hstack_frames(img1, text1, img2, text2):
     
     return combined_img
 
-
-def cv_histogram_rgba(rewards, size=(220, 110), bins=12, bar_color=(50, 180, 50)):
-    """Create a compact RGBA histogram image using OpenCV only.
-    - `rewards` should be an iterable of numeric values. Non-finite values are ignored.
-    - returns uint8 RGBA numpy array with transparent background.
-    """
-    import numpy as _np
-    import cv2 as _cv
-
-    w, h = size
-    out = _np.zeros((h, w, 4), dtype=_np.uint8)
-    try:
-        arr = _np.asarray(rewards, dtype=float)
-        arr = arr[_np.isfinite(arr)]
-    except Exception:
-        arr = _np.array([], dtype=float)
-
-    if arr.size == 0:
-        return out
-
-    hist, edges = _np.histogram(arr, bins=bins)
-    maxc = int(hist.max()) if hist.max() > 0 else 1
-    bar_w = max(1, w // bins)
-    padding = 4
-    for i, val in enumerate(hist):
-        bar_h = int((val / maxc) * (h - padding * 2))
-        x1 = i * bar_w + padding
-        y1 = h - padding - bar_h
-        x2 = min(w - padding, x1 + bar_w - 2)
-        y2 = h - padding
-        b, g, r = int(bar_color[0]), int(bar_color[1]), int(bar_color[2])
-        _cv.rectangle(out, (x1, y1), (x2, y2), (b, g, r, 255), -1)
-    return out
-
-
-def overlay_rgba_on_bgr(frame_bgr, overlay_rgba, pos=(10, 10)):
-    """Alpha-blend an RGBA overlay into a BGR frame at pos (x,y). Returns modified frame (copy).
-    Both inputs are numpy arrays (uint8).
-    """
-    import numpy as _np
-
-    if overlay_rgba is None:
-        return frame_bgr
-    out = frame_bgr.copy()
-    h, w = out.shape[:2]
-    oh, ow = overlay_rgba.shape[:2]
-    x, y = pos
-    # clamp region
-    if x < 0:
-        overlay_rgba = overlay_rgba[:, -x:]
-        ow = overlay_rgba.shape[1]
-        x = 0
-    if y < 0:
-        overlay_rgba = overlay_rgba[-y:, :]
-        oh = overlay_rgba.shape[0]
-        y = 0
-    if x >= w or y >= h:
-        return out
-    end_x = min(w, x + ow)
-    end_y = min(h, y + oh)
-    roi_w = end_x - x
-    roi_h = end_y - y
-    if roi_w <= 0 or roi_h <= 0:
-        return out
-
-    roi = out[y:end_y, x:end_x].astype('float32')
-    overlay = overlay_rgba[0:roi_h, 0:roi_w].astype('float32')
-    alpha = overlay[:, :, 3:4] / 255.0
-    rgb_overlay = overlay[:, :, :3]
-    blended = (1.0 - alpha) * roi + alpha * rgb_overlay[:, :, ::-1]
-    out[y:end_y, x:end_x] = blended.astype('uint8')
-    return out
-
-
 def mark_right_half_counterfactual(frame_bgr, is_counterfactual=False, color=(0, 0, 255), thickness=6, tint_alpha=0.12):
     """Mark the right half of a combined (left|right) frame as counterfactual.
     - If `is_counterfactual` True, draws a border on the right half and applies a slight tint.
@@ -584,9 +510,11 @@ def mark_right_half_counterfactual(frame_bgr, is_counterfactual=False, color=(0,
 
 def create_hist_bar_bgr(frame_width, left_rewards, right_rewards, hist_h=110, bins=12,
                         left_color=(50, 180, 50), right_color=(180, 50, 50), padding=8,
-                        label_color=(0, 0, 0), font_scale=0.5, thickness=1):
+                        label_color=(0, 0, 0), font_scale=0.5, thickness=1,
+                        metadata_lines=None, meta_width=None):
     """Create a white BGR bar (height `hist_h`) containing two histograms (left/right halves)
-    and numeric mean labels below each histogram. Returns a BGR uint8 image.
+    and numeric mean labels below each histogram. Metadata (if provided) is centered across
+    the full width at the top of the bar. Returns a BGR uint8 image.
     """
     import numpy as _np
     import cv2 as _cv
@@ -594,14 +522,16 @@ def create_hist_bar_bgr(frame_width, left_rewards, right_rewards, hist_h=110, bi
     W = int(frame_width)
     H = int(hist_h)
     bar = _np.full((H, W, 3), 255, dtype=_np.uint8)
+
+    # We'll render metadata centered at the top and use full-width halves for histograms
     half = W // 2
 
-    def _draw_hist_on_region(region_x, rewards, color):
-        # region: x start, width = half
-        region_w = half - padding * 2
-        region_h = H - padding * 2 - 18  # reserve space for label text
+    def _draw_hist_on_region(region_x, region_w, region_y, rewards, color):
+        # region: x start, given width and y start
+        region_h = H - region_y - padding - 18  # reserve space for label text
         if region_w <= 8 or region_h <= 8:
-            return
+            # region too small to draw histogram; return NA mean and zero count
+            return float('nan'), 0
         try:
             arr = _np.asarray(rewards, dtype=float)
             arr = arr[_np.isfinite(arr)]
@@ -609,7 +539,7 @@ def create_hist_bar_bgr(frame_width, left_rewards, right_rewards, hist_h=110, bi
             arr = _np.array([], dtype=float)
         if arr.size == 0:
             # draw empty outline
-            _cv.rectangle(bar, (region_x + padding, padding), (region_x + padding + region_w, padding + region_h), (200,200,200), 1)
+            _cv.rectangle(bar, (region_x + padding, region_y), (region_x + padding + region_w, region_y + region_h), (200,200,200), 1)
             mean_val = float('nan')
             count = 0
             return mean_val, count
@@ -620,20 +550,48 @@ def create_hist_bar_bgr(frame_width, left_rewards, right_rewards, hist_h=110, bi
         for i, val in enumerate(hist):
             bar_h = int((val / maxc) * (region_h))
             x1 = region_x + padding + i * bw
-            y1 = padding + (region_h - bar_h)
+            y1 = region_y + (region_h - bar_h)
             x2 = x1 + bw - 1
-            y2 = padding + region_h - 1
+            y2 = region_y + region_h - 1
             b, g, r = int(color[0]), int(color[1]), int(color[2])
             _cv.rectangle(bar, (x1, y1), (min(x2, region_x + padding + region_w - 1), y2), (b, g, r), -1)
         mean_val = float(_np.mean(arr))
         count = int(arr.size)
         return mean_val, count
 
-    left_mean, left_count = _draw_hist_on_region(0, left_rewards, left_color)
-    right_mean, right_count = _draw_hist_on_region(half, right_rewards, right_color)
+    # prepare metadata area height (if any) and draw centered
+    meta_height = 0
+    if metadata_lines:
+        try:
+            if isinstance(metadata_lines, str):
+                lines = metadata_lines.split('\n')
+            else:
+                lines = list(metadata_lines)
+            meta_font = _cv.FONT_HERSHEY_SIMPLEX
+            meta_scale = max(0.45, font_scale - 0.05)
+            meta_th = max(1, thickness)
+            line_h = int(14 + 6)
+            meta_height = min(H // 3, len(lines) * line_h)
+            # draw each line centered
+            y = padding + 12
+            for ln in lines:
+                if y > padding + meta_height:
+                    break
+                text = str(ln)
+                (tw, th), _ = _cv.getTextSize(text, meta_font, meta_scale, meta_th)
+                x = (W // 2) - (tw // 2)
+                _cv.putText(bar, text, (x, y), meta_font, meta_scale, (40, 40, 40), meta_th, _cv.LINE_AA)
+                y += line_h
+        except Exception:
+            meta_height = 0
 
-    # draw vertical separator line
-    _cv.line(bar, (half, padding), (half, H - padding - 18), (220, 220, 220), 1)
+    # draw histograms in left and right halves (below the metadata area)
+    hist_y = padding + meta_height + 4
+    left_mean, left_count = _draw_hist_on_region(0, half, hist_y, left_rewards, left_color)
+    right_mean, right_count = _draw_hist_on_region(half, W - half, hist_y, right_rewards, right_color)
+
+    # draw vertical separator line between left/right hist regions
+    _cv.line(bar, (half, hist_y), (half, H - padding - 18), (220, 220, 220), 1)
 
     # draw mean labels centered under each histogram
     font = _cv.FONT_HERSHEY_SIMPLEX
@@ -661,35 +619,5 @@ def create_hist_bar_bgr(frame_width, left_rewards, right_rewards, hist_h=110, bi
         _cv.putText(bar, right_text, (text_x, label_y), font, font_scale, (120,120,120), thickness, _cv.LINE_AA)
 
     return bar
-
-def load_trace_from_file(file_path, trace_idx=None):
-    """Load a single trace (converted to Trace object) from a Traces.pkl file.
-    If trace_idx is provided, return the trace with matching `trace_idx` field.
-    Otherwise return the first trace found.
-    """
-    if not os.path.exists(file_path):
-        return None
-    objs = []
-    try:
-        with open(file_path, 'rb') as f:
-            while True:
-                try:
-                    objs.append(pickle.load(f))
-                except EOFError:
-                    break
-    except Exception:
-        return None
-
-    # convert any dicts to Trace objects
-    traces = [_dict_to_trace(o) for o in objs]
-    if trace_idx is None:
-        return traces[0] if traces else None
-    for tr in traces:
-        try:
-            if getattr(tr, 'trace_idx', None) == trace_idx:
-                return tr
-        except Exception:
-            continue
-    return None
 
 
