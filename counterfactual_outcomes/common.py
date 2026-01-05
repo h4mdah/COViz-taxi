@@ -508,116 +508,143 @@ def mark_right_half_counterfactual(frame_bgr, is_counterfactual=False, color=(0,
     return out
 
 
-def create_hist_bar_bgr(frame_width, left_rewards, right_rewards, hist_h=110, bins=12,
-                        left_color=(50, 180, 50), right_color=(180, 50, 50), padding=8,
-                        label_color=(0, 0, 0), font_scale=0.5, thickness=1,
-                        metadata_lines=None, meta_width=None):
-    """Create a white BGR bar (height `hist_h`) containing two histograms (left/right halves)
-    and numeric mean labels below each histogram. Metadata (if provided) is centered across
-    the full width at the top of the bar. Returns a BGR uint8 image.
+def create_reward_bar_chart(frame_width, left_rewards, right_rewards, current_step_idx,
+                            hist_h=100, metadata_lines=None):
+    """
+    Create a BGR bar chart image of height `hist_h` + metadata space.
+    Draws two side-by-side charts for left_rewards and right_rewards.
+    - Bars are red (<0) or green (>=0).
+    - A specific marker/highlight is drawn at `current_step_idx`.
     """
     import numpy as _np
     import cv2 as _cv
 
     W = int(frame_width)
-    H = int(hist_h)
-    bar = _np.full((H, W, 3), 255, dtype=_np.uint8)
-
-    # We'll render metadata centered at the top and use full-width halves for histograms
-    half = W // 2
-
-    def _draw_hist_on_region(region_x, region_w, region_y, rewards, color):
-        # region: x start, given width and y start
-        region_h = H - region_y - padding - 18  # reserve space for label text
-        if region_w <= 8 or region_h <= 8:
-            # region too small to draw histogram; return NA mean and zero count
-            return float('nan'), 0
-        try:
-            arr = _np.asarray(rewards, dtype=float)
-            arr = arr[_np.isfinite(arr)]
-        except Exception:
-            arr = _np.array([], dtype=float)
-        if arr.size == 0:
-            # draw empty outline
-            _cv.rectangle(bar, (region_x + padding, region_y), (region_x + padding + region_w, region_y + region_h), (200,200,200), 1)
-            mean_val = float('nan')
-            count = 0
-            return mean_val, count
-
-        hist, edges = _np.histogram(arr, bins=bins)
-        maxc = int(hist.max()) if hist.max() > 0 else 1
-        bw = max(1, region_w // bins)
-        for i, val in enumerate(hist):
-            bar_h = int((val / maxc) * (region_h))
-            x1 = region_x + padding + i * bw
-            y1 = region_y + (region_h - bar_h)
-            x2 = x1 + bw - 1
-            y2 = region_y + region_h - 1
-            b, g, r = int(color[0]), int(color[1]), int(color[2])
-            _cv.rectangle(bar, (x1, y1), (min(x2, region_x + padding + region_w - 1), y2), (b, g, r), -1)
-        mean_val = float(_np.mean(arr))
-        count = int(arr.size)
-        return mean_val, count
-
-    # prepare metadata area height (if any) and draw centered
-    meta_height = 0
-    if metadata_lines:
-        try:
-            if isinstance(metadata_lines, str):
-                lines = metadata_lines.split('\n')
-            else:
-                lines = list(metadata_lines)
-            meta_font = _cv.FONT_HERSHEY_SIMPLEX
-            meta_scale = max(0.45, font_scale - 0.05)
-            meta_th = max(1, thickness)
-            line_h = int(14 + 6)
-            meta_height = min(H // 3, len(lines) * line_h)
-            # draw each line centered
-            y = padding + 12
-            for ln in lines:
-                if y > padding + meta_height:
-                    break
-                text = str(ln)
-                (tw, th), _ = _cv.getTextSize(text, meta_font, meta_scale, meta_th)
-                x = (W // 2) - (tw // 2)
-                _cv.putText(bar, text, (x, y), meta_font, meta_scale, (40, 40, 40), meta_th, _cv.LINE_AA)
-                y += line_h
-        except Exception:
-            meta_height = 0
-
-    # draw histograms in left and right halves (below the metadata area)
-    hist_y = padding + meta_height + 4
-    left_mean, left_count = _draw_hist_on_region(0, half, hist_y, left_rewards, left_color)
-    right_mean, right_count = _draw_hist_on_region(half, W - half, hist_y, right_rewards, right_color)
-
-    # draw vertical separator line between left/right hist regions
-    _cv.line(bar, (half, hist_y), (half, H - padding - 18), (220, 220, 220), 1)
-
-    # draw mean labels centered under each histogram
+    padding = 10
+    
+    # --- Metadata drawing ---
+    meta_h = 0
     font = _cv.FONT_HERSHEY_SIMPLEX
-    label_y = H - padding - 2
-    if not _np.isnan(left_mean):
-        left_text = f"mu={left_mean:+.2f} n={left_count}"
-        (tw, th), _ = _cv.getTextSize(left_text, font, font_scale, thickness)
-        text_x = (half // 2) - (tw // 2)
-        _cv.putText(bar, left_text, (text_x, label_y), font, font_scale, label_color, thickness, _cv.LINE_AA)
-    else:
-        left_text = "mu=NA n=0"
-        (tw, th), _ = _cv.getTextSize(left_text, font, font_scale, thickness)
-        text_x = (half // 2) - (tw // 2)
-        _cv.putText(bar, left_text, (text_x, label_y), font, font_scale, (120,120,120), thickness, _cv.LINE_AA)
+    font_scale = 0.45
+    thickness = 1
+    
+    if metadata_lines:
+        lines = metadata_lines if isinstance(metadata_lines, list) else str(metadata_lines).split('\n')
+        line_spacing = 20
+        meta_h = len(lines) * line_spacing + padding * 2
+    
+    idx_h = 20 # Space for X-axis index text? Or just a small buffer.
+    total_h = hist_h + meta_h + idx_h
+    
+    # Create white canvas
+    canvas = _np.full((total_h, W, 3), 255, dtype=_np.uint8)
 
-    if not _np.isnan(right_mean):
-        right_text = f"mu={right_mean:+.2f} n={right_count}"
-        (tw, th), _ = _cv.getTextSize(right_text, font, font_scale, thickness)
-        text_x = half + (half // 2) - (tw // 2)
-        _cv.putText(bar, right_text, (text_x, label_y), font, font_scale, label_color, thickness, _cv.LINE_AA)
-    else:
-        right_text = "mu=NA n=0"
-        (tw, th), _ = _cv.getTextSize(right_text, font, font_scale, thickness)
-        text_x = half + (half // 2) - (tw // 2)
-        _cv.putText(bar, right_text, (text_x, label_y), font, font_scale, (120,120,120), thickness, _cv.LINE_AA)
+    # Draw Metadata
+    if metadata_lines:
+        y_text = padding + 12
+        for ln in lines:
+            text_size, _ = _cv.getTextSize(ln, font, font_scale, thickness)
+            tx = (W - text_size[0]) // 2
+            _cv.putText(canvas, ln, (tx, y_text), font, font_scale, (50, 50, 50), thickness, _cv.LINE_AA)
+            y_text += line_spacing
 
-    return bar
+    # --- Setup Chart Areas ---
+    # We want two distinct charts side-by-side, matching the split screen nature
+    half_w = W // 2
+    chart_y_start = meta_h + padding
+    chart_h = hist_h
+    
+    # Determine Global Min/Max for unified scaling (optional, but good for comparison)
+    # Filter out None or non-finite values
+    valid_l = [r for r in left_rewards if r is not None and _np.isfinite(r)]
+    valid_r = [r for r in right_rewards if r is not None and _np.isfinite(r)]
+    all_vals = valid_l + valid_r
+    
+    if not all_vals:
+        max_val = 1.0
+        min_val = -1.0
+    else:
+        max_val = max(1.0, max(all_vals))
+        min_val = min(-1.0, min(all_vals))
+        
+    # Add some headroom
+    max_val *= 1.1
+    min_val *= 1.1
+    val_range = max_val - min_val
+    if val_range == 0: val_range = 1.0
+
+    # Function to draw a single chart
+    def _draw_chart(rewards, x_offset, width):
+        # Draw bounding box (implied by region)
+        # _cv.rectangle(canvas, (x_offset, chart_y_start), (x_offset + width, chart_y_start + chart_h), (240, 240, 240), 1)
+
+        # Draw zero line
+        # zero_y relative to chart top
+        # y = val_norm * h ... but 0 is at some point
+        # ratio of (0 - min) / range indicates where 0 is from the bottom
+        zero_ratio = (0 - min_val) / val_range
+        zero_y = int(chart_y_start + chart_h - (zero_ratio * chart_h))
+        _cv.line(canvas, (x_offset, zero_y), (x_offset + width, zero_y), (200, 200, 200), 1)
+        
+        n_steps = len(rewards)
+        if n_steps == 0: return
+
+        # Bar width
+        bar_w = width / n_steps
+        
+        # Current step indicator line location
+        curr_x_center = -1
+
+        for i, r in enumerate(rewards):
+            
+            x1 = int(x_offset + i * bar_w)
+            x2 = int(x_offset + (i + 1) * bar_w) - 1
+            if x2 < x1: x2 = x1
+            
+            if i == current_step_idx:
+                curr_x_center = (x1 + x2) // 2
+
+            if r is None or not _np.isfinite(r):
+                continue
+            
+            # Height calculation
+            # val_ratio = (r - min_val) / val_range # This gives absolute position 0..1
+            
+            if r >= 0:
+                top_val = r
+                bot_val = 0
+                color = (100, 200, 100) # Green
+            else:
+                top_val = 0
+                bot_val = r
+                color = (100, 100, 220) # Red/Orange
+            
+            top_y_ratio = (top_val - min_val) / val_range
+            bot_y_ratio = (bot_val - min_val) / val_range
+            
+            # INVERT for image coords (0 at top)
+            y1 = int(chart_y_start + chart_h - (top_y_ratio * chart_h))
+            y2 = int(chart_y_start + chart_h - (bot_y_ratio * chart_h))
+            
+            # Draw bar
+            _cv.rectangle(canvas, (x1, y1), (x2, y2), color, -1)
+            
+        # Draw current step line overlay
+        if curr_x_center >= 0:
+             _cv.line(canvas, (curr_x_center, chart_y_start), (curr_x_center, chart_y_start + chart_h), (50, 50, 50), 1)
+
+
+    # Draw Left Chart
+    _draw_chart(left_rewards, 0, half_w - 5)
+    
+    # Draw Right Chart
+    _draw_chart(right_rewards, half_w + 5, half_w - 5)
+    
+    # Draw Separator
+    _cv.line(canvas, (half_w, chart_y_start), (half_w, total_h - 5), (200, 200, 200), 1)
+    
+    return canvas
+
+
 
 

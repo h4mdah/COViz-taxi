@@ -21,7 +21,7 @@ import pickle
 
 from counterfactual_outcomes.common import save_traces, log_msg, load_traces, \
     get_highlight_traj_indxs, save_highlights, save_frames, hstack_frames, \
-     mark_right_half_counterfactual, create_hist_bar_bgr
+     mark_right_half_counterfactual, create_reward_bar_chart
 from counterfactual_outcomes.contrastive_online import online_comparison
 from counterfactual_outcomes.contrastive_online_RD import online_comparison_RD
 from counterfactual_outcomes.get_agent import get_config, get_agent
@@ -267,179 +267,185 @@ def main(args):
 
         combined_frames = []
 
-        n_steps = min(len(indxs), len(contra_traj.states))
+        n_steps = max(len(indxs), len(contra_traj.states))
+
+        # Helper to format RD
+        def _format_rd_for_action(rd_val, action_idx=None):
+            try:
+                if rd_val is None:
+                    return 'RD:N/A'
+                import numpy as _np
+                arr = _np.asarray(rd_val)
+                if arr.ndim == 1 and arr.size == 3:
+                    t, s, il = arr
+                    return f"time:{t:+.0f} succ:{s:+.0f} ill:{il:+.0f}"
+                if arr.ndim == 2:
+                    if action_idx is None:
+                        sums = arr.sum(axis=1)
+                        idx = int(_np.argmax(sums)) if sums.size > 0 else 0
+                    else:
+                        idx = int(action_idx) if action_idx is not None else 0
+                    if idx < 0 or idx >= arr.shape[0]:
+                        return 'RD:idxOOB'
+                    row = arr[idx]
+                    t, s, il = row if row.size >= 3 else (row[0], 0, 0)
+                    return f"act{idx}: time:{t:+.0f} succ:{s:+.0f} ill:{il:+.0f}"
+                if arr.size == 1:
+                    return f"RD:{float(arr):+.2f}"
+                flat = arr.flatten()
+                if flat.size > 4:
+                    return 'RD:[' + ','.join([f"{x:.2f}" for x in flat[:4]]) + ',..]'
+                return 'RD:[' + ','.join([f"{x:.2f}" for x in flat]) + ']'
+            except Exception:
+                return 'RD:N/A'
 
         for i in range(n_steps):
-            orig_state_idx = indxs[i]
-            orig_frame = trace.states[orig_state_idx].image
-            
-            try:
-                orig_rew = trace.rewards[orig_state_idx]
-            except Exception:
-                orig_rew = 'N/A' \
-            
-            contra_frame = contra_traj.states[i].image
-            try:
-                contra_rew = contra_traj.rewards[i]
-            except Exception:
-                contra_rew = 'N/A' 
-            # Format reward decomposition (RD) values with clear labels for the chosen action
-            def _format_rd_for_action(rd_val, action_idx=None):
+            # Determine current frame and text for ORIGINAL trace
+            if i < len(indxs):
+                orig_state_idx = indxs[i]
+                orig_frame = trace.states[orig_state_idx].image
                 try:
-                    if rd_val is None:
-                        return 'RD:N/A'
-                    import numpy as _np
-                    arr = _np.asarray(rd_val)
-                    # If arr is 1D with 3 components, assume [time, success, illegal]
-                    if arr.ndim == 1 and arr.size == 3:
-                        t, s, il = arr
-                        return f"time:{t:+.0f} succ:{s:+.0f} ill:{il:+.0f}"
-                    # If arr is 2D (n_actions x 3), pick row by action_idx if provided
-                    if arr.ndim == 2:
-                        if action_idx is None:
-                            # default to the action with max sum of components
-                            sums = arr.sum(axis=1)
-                            idx = int(_np.argmax(sums)) if sums.size > 0 else 0
-                        else:
-                            idx = int(action_idx) if action_idx is not None else 0
-                        if idx < 0 or idx >= arr.shape[0]:
-                            return 'RD:idxOOB'
-                        row = arr[idx]
-                        t, s, il = row if row.size >= 3 else (row[0], 0, 0)
-                        return f"act{idx}: time:{t:+.0f} succ:{s:+.0f} ill:{il:+.0f}"
-                    # fallback scalar
-                    if arr.size == 1:
-                        return f"RD:{float(arr):+.2f}"
-                    # otherwise, show a compact summary
-                    flat = arr.flatten()
-                    if flat.size > 4:
-                        return 'RD:[' + ','.join([f"{x:.2f}" for x in flat[:4]]) + ',..]'
-                    return 'RD:[' + ','.join([f"{x:.2f}" for x in flat]) + ']'
+                    orig_rew = trace.rewards[orig_state_idx]
                 except Exception:
-                    return 'RD:N/A'
-
-            # original RD: try to get RD matrix and the action taken that led to this state
-            orig_rd = None
-            rd_vals = getattr(trace, 'RD_vals', None)
-            orig_action = None
-            try:
-                orig_action = trace.previous_actions[orig_state_idx] if getattr(trace, 'previous_actions', None) is not None else None
-            except Exception:
+                    orig_rew = 'N/A'
+                
+                # RD and Action for Original
+                orig_rd = None
+                rd_vals = getattr(trace, 'RD_vals', None)
                 orig_action = None
-            if rd_vals is not None:
                 try:
-                    orig_rd = rd_vals[orig_state_idx]
+                    orig_action = trace.previous_actions[orig_state_idx] if getattr(trace, 'previous_actions', None) is not None else None
                 except Exception:
-                    orig_rd = None
+                    orig_action = None
+                if rd_vals is not None:
+                    try:
+                        orig_rd = rd_vals[orig_state_idx]
+                    except Exception:
+                        orig_rd = None
+                
+                text1 = f"R:{orig_rew} | " + _format_rd_for_action(orig_rd, orig_action)
+            else:
+                # Original finished: freeze last frame
+                last_idx = indxs[-1] if indxs else 0
+                orig_frame = trace.states[last_idx].image
+                text1 = "DONE"
+                orig_state_idx = last_idx # Keep using last valid index for overlays
 
-            # contrastive RD (may not be present) and action taken in contrastive traj
-            contra_rd = None
-            contra_action = None
-            if hasattr(contra_traj, 'RD_vals') and getattr(contra_traj, 'RD_vals') is not None:
+            # Determine current frame and text for CONTRASTIVE trace
+            if i < len(contra_traj.states):
+                contra_frame = contra_traj.states[i].image
                 try:
-                    contra_rd = contra_traj.RD_vals[i]
+                    contra_rew = contra_traj.rewards[i]
                 except Exception:
-                    contra_rd = None
-            try:
-                if hasattr(contra_traj, 'actions') and len(getattr(contra_traj, 'actions', [])) > i:
-                    contra_action = contra_traj.actions[i]
-                else:
-                    # fallback: use the original action if available
-                    contra_action = orig_action
-            except Exception:
+                    contra_rew = 'N/A'
+                
+                # RD and Action for Contrastive
+                contra_rd = None
                 contra_action = None
-
-            text1 = f"R:{orig_rew} | " + _format_rd_for_action(orig_rd, orig_action)
-            text2 = f"R:{contra_rew} | " + _format_rd_for_action(contra_rd, contra_action)
+                if hasattr(contra_traj, 'RD_vals') and getattr(contra_traj, 'RD_vals') is not None:
+                    try:
+                        contra_rd = contra_traj.RD_vals[i]
+                    except Exception:
+                        contra_rd = None
+                try:
+                    if hasattr(contra_traj, 'actions') and len(getattr(contra_traj, 'actions', [])) > i:
+                        contra_action = contra_traj.actions[i]
+                    else:
+                        contra_action = orig_action # Fallback? Maybe just None
+                except Exception:
+                    contra_action = None
+                
+                text2 = f"R:{contra_rew} | " + _format_rd_for_action(contra_rd, contra_action)
+            else:
+                # Contrastive finished: freeze last frame
+                if contra_traj.states:
+                    contra_frame = contra_traj.states[-1].image
+                else:
+                    # Fallback if empty
+                    contra_frame = trace.states[0].image # Should not happen if filtered
+                text2 = "DONE"
 
             combined_frame = hstack_frames(orig_frame, text1, contra_frame, text2)
 
-            # --- Overlay per-side rewards histogram and mark counterfactual half ---
+            # --- Mark counterfactual half ---
+            # mark right half as counterfactual starting from the fork (s_idx)
+            is_cf = False
             try:
-                # choose window size (use args.hist_window if provided, else default)
-                hist_window = getattr(args, 'hist_window', 20)
-                # original rewards window: up to the original state index
-                try:
-                    orig_rewards_all = getattr(trace, 'rewards', []) or []
-                    orig_rewards = orig_rewards_all[max(0, orig_state_idx - hist_window + 1): orig_state_idx + 1]
-                except Exception:
-                    orig_rewards = []
-
-                # contrastive rewards window: up to index i in contrastive traj
-                try:
-                    contra_rewards_all = getattr(contra_traj, 'rewards', []) or []
-                    contra_rewards = contra_rewards_all[max(0, i - hist_window + 1): i + 1]
-                except Exception:
-                    contra_rewards = []
-
-                H, W = combined_frame.shape[:2]
-                half_w = W // 2
-                hist_h = max(30, int(H * 0.16))
-                hist_w = max(80, int(half_w * 0.42))
-
-                # create a white histogram bar above the combined frame and label with mean values
-                try:
-                    # collect metadata from args.config or args
-                    def _get_cfg_value(cfg, keys):
-                        if cfg is None:
-                            return None
-                        try:
-                            for k in keys:
-                                if isinstance(cfg, dict) and k in cfg and cfg[k]:
-                                    return cfg[k]
-                        except Exception:
-                            pass
-                        try:
-                            for k in keys:
-                                v = getattr(cfg, k, None)
-                                if v:
-                                    return v
-                        except Exception:
-                            pass
-                        return None
-
-                    cfg = getattr(args, 'config', None)
-                    algo = _get_cfg_value(cfg, ['algorithm', 'algo', 'agent_algorithm', 'policy']) or getattr(args, 'agent', None) or ''
-                    framework = _get_cfg_value(cfg, ['framework', 'backend', 'lib']) or getattr(args, 'framework', None) or ''
-                    env_name = _get_cfg_value(cfg, ['env_id', 'env', 'environment']) or getattr(args, 'env_id', None) or getattr(args, 'interface', '')
-                    steps = _get_cfg_value(cfg, ['train_steps', 'n_steps', 'steps', 'timesteps']) or getattr(args, 'train_steps', None) or ''
-                    model_file = os.path.basename(getattr(args, 'load_path', '') or '')
-                    meta_lines = []
-                    if algo:
-                        meta_lines.append(str(f"Algo: {algo}"))
-                    if framework:
-                        meta_lines.append(str(f"Framework: {framework}"))
-                    if env_name:
-                        meta_lines.append(str(f"Env: {env_name}"))
-                    if steps:
-                        meta_lines.append(str(f"Trained steps: {steps}"))
-                    if model_file:
-                        meta_lines.append(str(f"Model: {model_file}"))
-                    # cap metadata lines to avoid overflowing the bar
-                    if meta_lines:
-                        meta_lines = meta_lines[:3]
-
-                    top_bar = create_hist_bar_bgr(W, orig_rewards, contra_rewards, hist_h=hist_h, bins=12,
-                                                  left_color=(50, 180, 50), right_color=(180, 50, 50),
-                                                  metadata_lines=meta_lines)
-                    # place the bar above the game frame
-                    import numpy as _np
-                    combined_frame = _np.vstack([top_bar, combined_frame])
-                except Exception:
-                    # if histogram creation fails, keep original combined_frame
-                    pass
-
-                # mark right half as counterfactual starting from the fork (s_idx)
-                is_cf = False
-                try:
-                    is_cf = (orig_state_idx >= s_idx)
-                except Exception:
-                    is_cf = False
-
-                combined_frame = mark_right_half_counterfactual(combined_frame, is_counterfactual=is_cf,
-                                                                color=(0, 0, 255), thickness=6, tint_alpha=0.12)
+                is_cf = (orig_state_idx >= s_idx)
             except Exception:
-                # best-effort: if overlay fails, continue with unmodified combined_frame
+                is_cf = False
+
+            combined_frame = mark_right_half_counterfactual(combined_frame, is_counterfactual=is_cf,
+                                                            color=(0, 0, 255), thickness=6, tint_alpha=0.12)
+                                                                
+            # --- Overlay Reward Timeline ---
+            try:
+                # Get full rewards for timeline
+                orig_rewards_all = getattr(trace, 'rewards', []) or []
+                contra_rewards_all = getattr(contra_traj, 'rewards', []) or []
+                
+                # Metadata extraction (re-used from previous logic)
+                def _get_cfg_value(cfg, keys):
+                    if cfg is None:
+                        return None
+                    try:
+                        for k in keys:
+                            if isinstance(cfg, dict) and k in cfg and cfg[k]:
+                                return cfg[k]
+                    except Exception:
+                        pass
+                    try:
+                        for k in keys:
+                            v = getattr(cfg, k, None)
+                            if v:
+                                return v
+                    except Exception:
+                        pass
+                    return None
+
+                cfg = getattr(args, 'config', None)
+                algo = _get_cfg_value(cfg, ['algorithm', 'algo', 'agent_algorithm', 'policy']) or getattr(args, 'agent', None) or ''
+                framework = _get_cfg_value(cfg, ['framework', 'backend', 'lib']) or getattr(args, 'framework', None) or ''
+                env_name = _get_cfg_value(cfg, ['env_id', 'env', 'environment']) or getattr(args, 'env_id', None) or getattr(args, 'interface', '')
+                steps = _get_cfg_value(cfg, ['train_steps', 'n_steps', 'steps', 'timesteps']) or getattr(args, 'train_steps', None) or ''
+                model_file = os.path.basename(getattr(args, 'load_path', '') or '')
+                meta_lines = []
+                if algo:
+                    meta_lines.append(str(f"Algo: {algo}"))
+                if framework:
+                    meta_lines.append(str(f"Framework: {framework}"))
+                if env_name:
+                    meta_lines.append(str(f"Env: {env_name}"))
+                if steps:
+                    meta_lines.append(str(f"Trained steps: {steps}"))
+                if model_file:
+                    meta_lines.append(str(f"Model: {model_file}"))
+                if meta_lines:
+                    meta_lines = meta_lines[:3]
+                
+                # Pass 'i' as current step index. Note: i is the index in the loop, which tracks the contrastive trajectory length usually.
+                # However, for the timeline, we want it to align with the displayed states.
+                # orig_state_idx is the index in Original Trace.
+                # i is the index in Contrastive Trace.
+                # We need to decide which "current step" to highlight. Since we show side-by-side, maybe we should pass both indices?
+                # The generic function takes 'current_step_idx'. Let's use 'i' as it aligns with the loop progression (time).
+                # But wait, original trace might be time-shifted or jumped?
+                # Actually, the loop iterates `range(n_steps)`. 
+                # `orig_state_idx = indxs[i]`. `indxs` is the subset of original states aligned with contrastive.
+                # So `i` is the correct sequential index for the displayed video frame.
+                
+                timeline_bar = create_reward_bar_chart(combined_frame.shape[1], 
+                                                       orig_rewards_all, 
+                                                       contra_rewards_all, 
+                                                       current_step_idx=i,
+                                                       hist_h=80, 
+                                                       metadata_lines=meta_lines)
+                
+                import numpy as _np
+                combined_frame = _np.vstack([timeline_bar, combined_frame])
+                
+            except Exception as e:
+                # print(f"Timeline error: {e}")
                 pass
 
             combined_frames.append(combined_frame)
