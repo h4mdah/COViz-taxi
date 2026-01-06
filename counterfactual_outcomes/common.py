@@ -645,6 +645,27 @@ def create_reward_bar_chart(frame_width, left_rewards, right_rewards, current_st
     
     return canvas
 
+def create_info_strip(width, text_left, text_right, height=40, text_color=(0, 0, 0), bg_color=(255, 255, 255)):
+    """Creates a horizontal strip with two centered text labels (left and right halves)."""
+    strip = np.full((height, width, 3), bg_color, dtype=np.uint8)
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    scale = 0.6
+    thickness = 1
+    
+    # Left text
+    (tw, th), baseline = cv2.getTextSize(text_left, font, scale, thickness)
+    x = (width // 4) - (tw // 2)
+    y = (height // 2) + (th // 2)
+    cv2.putText(strip, text_left, (x, y), font, scale, text_color, thickness, cv2.LINE_AA)
+    
+    # Right text
+    (tw, th), baseline = cv2.getTextSize(text_right, font, scale, thickness)
+    x = (3 * (width // 4)) - (tw // 2)
+    y = (height // 2) + (th // 2)
+    cv2.putText(strip, text_right, (x, y), font, scale, text_color, thickness, cv2.LINE_AA)
+    
+    return strip
+
 
 
 

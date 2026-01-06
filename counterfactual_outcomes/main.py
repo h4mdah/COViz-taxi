@@ -21,7 +21,7 @@ import pickle
 
 from counterfactual_outcomes.common import save_traces, log_msg, load_traces, \
     get_highlight_traj_indxs, save_highlights, save_frames, hstack_frames, \
-     mark_right_half_counterfactual, create_reward_bar_chart
+     mark_right_half_counterfactual, create_reward_bar_chart, create_info_strip
 from counterfactual_outcomes.contrastive_online import online_comparison
 from counterfactual_outcomes.contrastive_online_RD import online_comparison_RD
 from counterfactual_outcomes.get_agent import get_config, get_agent
@@ -268,6 +268,9 @@ def main(args):
         combined_frames = []
 
         n_steps = max(len(indxs), len(contra_traj.states))
+        
+        orig_len = len(trace.states)
+        contra_len = getattr(contra_traj, 'start_idx', 0) + len(contra_traj.states)
 
         # Helper to format RD
         def _format_rd_for_action(rd_val, action_idx=None):
@@ -442,7 +445,11 @@ def main(args):
                                                        metadata_lines=meta_lines)
                 
                 import numpy as _np
-                combined_frame = _np.vstack([timeline_bar, combined_frame])
+                # Create info strip
+                info_strip = create_info_strip(combined_frame.shape[1], 
+                                               f"Episode Length: {orig_len}", 
+                                               f"Episode Length: {contra_len}")
+                combined_frame = _np.vstack([timeline_bar, info_strip, combined_frame])
                 
             except Exception as e:
                 # print(f"Timeline error: {e}")
