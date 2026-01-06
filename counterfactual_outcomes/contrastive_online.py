@@ -236,6 +236,17 @@ def online_comparison(env1, agent1, env2, agent2, args, evaluation1=None, evalua
             traces.append(trace)
             continue
 
+        # Record the final terminal state
+        if done:
+            logging.debug(f'terminal env1 time-step: {step}')
+            state = agent1.interface.get_state_from_obs(agent1, obs, [r, done])
+            s_a_values = agent1.interface.get_state_action_values(agent1, state)
+            state_id, frame = (t, step), env1.render()
+            features = agent1.interface.get_features(env1, obs)
+            state_obj = State(state_id, obs, state, s_a_values, frame, features)
+            trace.update(state_obj, obs, r, done, infos, None, state_id)
+            trace.contrastive.append(None)
+
         """end of episode"""
         traces.append(trace)
     return traces

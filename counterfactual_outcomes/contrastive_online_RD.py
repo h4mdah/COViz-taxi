@@ -205,6 +205,20 @@ def online_comparison_RD(env1, agent1, env2, agent2, args, evaluation1=None, eva
             # if done immediately after fork, just finish
             pass
 
+        # Record the final terminal state
+        if done:
+            logging.debug(f'terminal env1 time-step: {step}')
+            state = agent1.interface.get_state_from_obs(agent1, obs, [r, done])
+            s_a_values = agent1.interface.get_state_action_values(agent1, state)
+            rd_action_values = agent1.interface.get_state_RD_action_values(agent1, state)
+            trace_rd_vals.append(rd_action_values)
+
+            state_id, frame = (t, step), env1.render()
+            features = agent1.interface.get_features(env1, obs)
+            state_obj = State(state_id, obs, state, s_a_values, frame, features)
+            trace.update(state_obj, obs, r, done, infos, None, state_id)
+            trace.contrastive.append(None)
+
         """end of episode"""
         trace.RD_vals = trace_rd_vals
         traces.append(trace)
