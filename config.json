@@ -27,5 +27,6 @@
     "multi_head": true,
     "model_dir": "C:\\Users\\hmari\\Desktop\\THI_KI\\S5\\COViz-taxi\\agents\\taxi_sb3\\",
     "sync_prefix": 4,
-    "dump_env_diff": true
+    "dump_env_diff": true,
+    "start_state": 123
 }

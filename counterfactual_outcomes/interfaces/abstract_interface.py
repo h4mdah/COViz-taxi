@@ -7,6 +7,13 @@ class AbstractInterface(object):
         self.output_dir = output_dir
         self.config = config
 
+    def reset_env(self, env, state=None, seed=None):
+        """
+        Reset the environment and optionally force a specific state.
+        Default implementation just calls env.reset().
+        """
+        return env.reset(seed=seed)
+
     def initiate(self):
         return
 

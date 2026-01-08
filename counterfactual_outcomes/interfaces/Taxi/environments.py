@@ -1,60 +1,53 @@
 import gymnasium as gym
 from gymnasium.envs.registration import register
 from typing import Dict, Any, Union
-from gymnasium import Env
+from gymnasium import Wrapper
 
-class TaxiEnvWrapper(Env):
-    """Wrapper to expose the Gymnasium new API for Taxi-v3."""
+class TaxiEnvWrapper(gym.Wrapper):
+    """Wrapper to expose the Gymnasium new API for Taxi-v3 and ensure state access."""
+    metadata = {"render_modes": ["rgb_array"]}
+    
     def __init__(self, **kwargs):
-        self.env = gym.make('Taxi-v3', render_mode = 'rgb_array')
-        self.action_space = self.env.action_space
-        self.observation_space = self.env.observation_space
-        self.render_mode = self.env.render_mode
+        env = gym.make('Taxi-v3', render_mode = 'rgb_array')
+        super().__init__(env)
         self.env_id = 'Taxi-v3'
-        # keep metadata/reward_range if present
-        self.metadata = getattr(self.env, "metadata", {})
-        self.reward_range = getattr(self.env, "reward_range", None)
+        self.metadata = getattr(env, 'metadata', {"render_modes": ["rgb_array"]})
+
+    @property
+    def s(self):
+        return self.env.unwrapped.s
+
+    @s.setter
+    def s(self, value):
+        self.env.unwrapped.s = value
 
     def reset(self, **kwargs):
         """Return either (obs, info) if inner env supports new API, else (obs, {})"""
         res = self.env.reset(**kwargs)
-        # gymnasium new API returns (obs, info)
         if isinstance(res, tuple) and len(res) == 2:
             return res
-        # old Gym returns obs only
         return res, {}
 
     def step(self, action):
         """Return (obs, reward, terminated, truncated, info)."""
         res = self.env.step(action)
-        # gymnasium new API returns 5-tuple
         if isinstance(res, tuple) and len(res) == 5:
             return res
-        # old Gym returns 4-tuple (obs, reward, done, info) -> map to new API
         obs, reward, done, info = res
         terminated = bool(done)
         truncated = False
         return obs, reward, terminated, truncated, info
 
-    def render(self):
-        return self.env.render()
-
-    def close(self):
-        return self.env.close()
-    
     def __getstate__(self):
         state = self.__dict__.copy()
         state['unwrapped_state_s'] = self.env.unwrapped.s
-
         del state['env']
-        if 'unwrapped' in state:
-            del state['unwrapped']
         return state
     
     def __setstate__(self, state):
         unwrapped_state_s = state.pop('unwrapped_state_s')
         self.__dict__.update(state)
-        self.env = gym.make(self.env_id, render_mode=self.render_mode)
+        self.env = gym.make(self.env_id, render_mode='rgb_array')
         self.env.reset()
         self.env.unwrapped.s = unwrapped_state_s
 

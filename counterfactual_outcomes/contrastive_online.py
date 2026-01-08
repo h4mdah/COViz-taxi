@@ -85,28 +85,11 @@ def online_comparison(env1, agent1, env2, agent2, args, evaluation1=None, evalua
         pbar.set_description(f"Trace {t+1}/{args.n_traces}")
         trace = agent1.interface.contrastive_trace(t, args.k_steps)
         """initial state"""
-        res1 = env1.reset()
-        res2 = env2.reset()
+        res1 = agent1.interface.reset_env(env1, state=getattr(args, 'start_state', None))
+        res2 = agent2.interface.reset_env(env2, state=getattr(args, 'start_state', None))
         
-        # If a specific start state is requested (e.g. for Taxi), force it.
-        # This assumes the environment supports setting state via .s or similar
-        # and that the observation is consistent w/ that state or simply the state itself.
         if getattr(args, 'start_state', None) is not None:
-             try:
-                 env1.unwrapped.s = args.start_state
-                 env2.unwrapped.s = args.start_state
-                 # For Taxi, obs is just the state index
-                 res1 = args.start_state
-                 res2 = args.start_state
-                 env1.unwrapped.s = args.start_state
-                 env2.unwrapped.s = args.start_state
-                 # For Taxi, obs is just the state index
-                 res1 = args.start_state
-                 res2 = args.start_state
-                 pbar.write(f"Using start state: {args.start_state}")
-                 log_msg(f"Using start state: {args.start_state}", args.verbose)
-             except Exception:
-                 log_msg("Warning: could not set start_state on environment", args.verbose)
+             log_msg(f"Using start state: {args.start_state}", args.verbose)
 
         obs = res1[0] if isinstance(res1, tuple) else res1
         _obs = res2[0] if isinstance(res2, tuple) else res2

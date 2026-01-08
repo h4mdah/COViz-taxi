@@ -28,6 +28,38 @@ class TaxiInterface(AbstractInterface):
         super().__init__(config, output_dir)
         self.load_path = load_path
 
+    def reset_env(self, env, state=None, seed=None):
+        """
+        Reset taxi environment. If state is provided, force the taxi state index.
+        """
+        res = env.reset(seed=seed)
+        if state is not None:
+            try:
+                state_idx = int(state)
+                # Try multiple ways to set the underlying state
+                if hasattr(env, 'unwrapped') and hasattr(env.unwrapped, 's'):
+                    env.unwrapped.s = state_idx
+                elif hasattr(env, 's'):
+                    env.s = state_idx
+                
+                # Verify and Log decoded state
+                # Use decode from the nearest env object that has it
+                inner = getattr(env, 'unwrapped', None) or getattr(env, 'env', None) or env
+                if hasattr(inner, 'decode'):
+                    r, c, p, d = inner.decode(state_idx)
+                    print(f"DEBUG: Manually set Taxi Start State to {state_idx}")
+                    print(f"DEBUG: Decoded -> Taxi:({r},{c}), PassIdx:{p}, DestIdx:{d}")
+                
+                # update the observation to match the forced state.
+                new_obs = state_idx
+                if isinstance(res, tuple) and len(res) == 2:
+                    res = (new_obs, res[1])
+                else:
+                    res = new_obs
+            except Exception as e:
+                print(f"DEBUG Warning: could not set start_state {state}. Error: {e}")
+        return res
+
     def initiate(self, seed=0, evaluation_reset=False):
         config = self.config
         # Debug: print the resolved agent configuration so failures in agent_factory

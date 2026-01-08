@@ -34,6 +34,57 @@ graph TD
     end
 ```
 
+## The Algorithm
+
+The library follows a systematic process to identify and visualize critical decision points in an agent's behavior.
+
+### High-Level Procedure
+
+1.  **Environment Sync**: Reset environment and agent. Ensure the seed is consistent for reproducibility.
+2.  **Trace Selection**: 
+    -   Run the agent's policy to collect a "True" execution trace (Sequence of States, Actions, and Rewards).
+    -   Alternatively, load existing trace data from disk.
+3.  **Counterfactual Branching (The "Fork")**:
+    -   For every time-step $t$ in the original trace:
+        -   Identify a sub-optimal or alternative action $a'_{t}$.
+        -   Create a simulation branch: apply $a'_{t}$ at state $s_{t}$.
+        -   Continue simulation for $K$ steps using the agent's original policy to see the "long-term" consequence of that single deviation.
+4.  **Regret-Based Ranking**:
+    -   Calculate the **Importance Score** for each branch.
+    -   Standard metric: The difference in expected cumulative reward (Value) between the original action and the counterfactual action at the moment of the fork.
+5.  **Diverse Highlight Selection**:
+    -   Sort all branches by Importance.
+    -   Filter and select the Top-$K$ most significant branches that are spatially or temporally diverse.
+6.  **Synchronized Visualization**:
+    -   Construct a dual-pane video frame.
+    -   **Left Pane**: The original trajectory.
+    -   **Right Pane**: The counterfactual trajectory.
+    -   **Reward Timeline**: A dynamically scaled bar chart showing per-step rewards ($r_t$) for both paths.
+    -   **State Preservation**: If one path ends earlier, freeze the final frame and mark it as "DONE" while the other continues.
+
+### Pseudocode
+
+```python
+for trace in collection:
+    for t in range(len(trace)):
+        # Identify interesting alternate action
+        alt_action = get_second_best_action(trace.state[t])
+        
+        # Rollout alternative future
+        branch = rollout(trace.state[t], alt_action, duration=K_STEPS)
+        
+        # Calculate Importance (Regret)
+        score = abs(V(state[t], orig_action) - V(state[t], alt_action))
+        store_candidate(branch, score)
+
+# Select Top-K Diverse Highlights
+highlights = select_best(candidates, count=NUM_HIGHLIGHTS)
+
+# Render
+for hl in highlights:
+    render_side_by_side_video(hl.orig, hl.contra, overlay=reward_bars)
+```
+
 ## Modules and Functions
 
 ### Entry Point
