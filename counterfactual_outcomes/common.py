@@ -533,7 +533,8 @@ def create_reward_bar_chart(frame_width, left_rewards, right_rewards, current_st
         line_spacing = 20
         meta_h = len(lines) * line_spacing + padding * 2
     
-    idx_h = 20 # Space for X-axis index text? Or just a small buffer.
+    left_margin = 60
+    idx_h = 45 # Increased for X-axis labels
     total_h = hist_h + meta_h + idx_h
     
     # Create white canvas
@@ -548,14 +549,21 @@ def create_reward_bar_chart(frame_width, left_rewards, right_rewards, current_st
             _cv.putText(canvas, ln, (tx, y_text), font, font_scale, (50, 50, 50), thickness, _cv.LINE_AA)
             y_text += line_spacing
 
+    # --- Draw Legend ---
+    legend_y = padding + 12
+    legend_x = W - 110
+    # Positive
+    _cv.rectangle(canvas, (legend_x, legend_y - 8), (legend_x + 10, legend_y + 2), (100, 200, 100), -1)
+    _cv.putText(canvas, "Positive", (legend_x + 15, legend_y), font, 0.35, (50, 50, 50), 1, _cv.LINE_AA)
+    # Negative
+    _cv.rectangle(canvas, (legend_x, legend_y + 12), (legend_x + 10, legend_y + 22), (100, 100, 220), -1)
+    _cv.putText(canvas, "Negative", (legend_x + 15, legend_y + 20), font, 0.35, (50, 50, 50), 1, _cv.LINE_AA)
+
     # --- Setup Chart Areas ---
-    # We want two distinct charts side-by-side, matching the split screen nature
-    half_w = W // 2
-    chart_y_start = meta_h + padding
+    chart_y_start = meta_h + padding + 15 # extra space for sub-titles
     chart_h = hist_h
     
-    # Determine Global Min/Max for unified scaling (optional, but good for comparison)
-    # Filter out None or non-finite values
+    # Determine Global Min/Max
     valid_l = [r for r in left_rewards if r is not None and _np.isfinite(r)]
     valid_r = [r for r in right_rewards if r is not None and _np.isfinite(r)]
     all_vals = valid_l + valid_r
@@ -567,21 +575,30 @@ def create_reward_bar_chart(frame_width, left_rewards, right_rewards, current_st
         max_val = max(1.0, max(all_vals))
         min_val = min(-1.0, min(all_vals))
         
-    # Add some headroom
     max_val *= 1.1
     min_val *= 1.1
     val_range = max_val - min_val
     if val_range == 0: val_range = 1.0
 
-    # Function to draw a single chart
-    def _draw_chart(rewards, x_offset, width):
-        # Draw bounding box (implied by region)
-        # _cv.rectangle(canvas, (x_offset, chart_y_start), (x_offset + width, chart_y_start + chart_h), (240, 240, 240), 1)
+    # Draw Y-Axis Label (Vertical)
+    y_label_text = "Reward (r)"
+    # Rotate text by drawing onto a separate surface or just character by character? 
+    # Simple way: character by character or just horizontal on the side.
+    # We'll do a simple vertical stack for "Reward (r)"
+    y_lab_start = chart_y_start + (chart_h // 2) - 30
+    for i, char in enumerate(y_label_text):
+        _cv.putText(canvas, char, (10, y_lab_start + i*12), font, 0.35, (0, 0, 0), 1, _cv.LINE_AA)
+
+    # Draw Min/Max scale values
+    _cv.putText(canvas, f"{max_val:.1f}", (left_margin - 35, chart_y_start + 10), font, 0.3, (100, 100, 100), 1, _cv.LINE_AA)
+    _cv.putText(canvas, f"{min_val:.1f}", (left_margin - 35, chart_y_start + chart_h), font, 0.3, (100, 100, 100), 1, _cv.LINE_AA)
+
+    def _draw_chart(rewards, x_offset, width, title):
+        # Draw Title
+        (tw, th), _ = _cv.getTextSize(title, font, 0.4, 1)
+        _cv.putText(canvas, title, (x_offset + (width-tw)//2, chart_y_start - 10), font, 0.4, (0,0,0), 1, _cv.LINE_AA)
 
         # Draw zero line
-        # zero_y relative to chart top
-        # y = val_norm * h ... but 0 is at some point
-        # ratio of (0 - min) / range indicates where 0 is from the bottom
         zero_ratio = (0 - min_val) / val_range
         zero_y = int(chart_y_start + chart_h - (zero_ratio * chart_h))
         _cv.line(canvas, (x_offset, zero_y), (x_offset + width, zero_y), (200, 200, 200), 1)
@@ -589,59 +606,46 @@ def create_reward_bar_chart(frame_width, left_rewards, right_rewards, current_st
         n_steps = len(rewards)
         if n_steps == 0: return
 
-        # Bar width
         bar_w = width / n_steps
-        
-        # Current step indicator line location
         curr_x_center = -1
 
         for i, r in enumerate(rewards):
-            
             x1 = int(x_offset + i * bar_w)
             x2 = int(x_offset + (i + 1) * bar_w) - 1
             if x2 < x1: x2 = x1
-            
             if i == current_step_idx:
                 curr_x_center = (x1 + x2) // 2
-
             if r is None or not _np.isfinite(r):
                 continue
             
-            # Height calculation
-            # val_ratio = (r - min_val) / val_range # This gives absolute position 0..1
-            
             if r >= 0:
-                top_val = r
-                bot_val = 0
-                color = (100, 200, 100) # Green
+                top_val, bot_val, color = r, 0, (100, 200, 100)
             else:
-                top_val = 0
-                bot_val = r
-                color = (100, 100, 220) # Red/Orange
+                top_val, bot_val, color = 0, r, (100, 100, 220)
             
             top_y_ratio = (top_val - min_val) / val_range
             bot_y_ratio = (bot_val - min_val) / val_range
-            
-            # INVERT for image coords (0 at top)
             y1 = int(chart_y_start + chart_h - (top_y_ratio * chart_h))
             y2 = int(chart_y_start + chart_h - (bot_y_ratio * chart_h))
-            
-            # Draw bar
             _cv.rectangle(canvas, (x1, y1), (x2, y2), color, -1)
             
-        # Draw current step line overlay
         if curr_x_center >= 0:
              _cv.line(canvas, (curr_x_center, chart_y_start), (curr_x_center, chart_y_start + chart_h), (50, 50, 50), 1)
 
+        # Draw X-axis label "Step"
+        (sw, sh), _ = _cv.getTextSize("Step", font, 0.4, 1)
+        _cv.putText(canvas, "Step", (x_offset + (width-sw)//2, chart_y_start + chart_h + 20), font, 0.4, (0,0,0), 1, _cv.LINE_AA)
+        _cv.putText(canvas, "0", (x_offset, chart_y_start + chart_h + 12), font, 0.3, (100, 100, 100), 1, _cv.LINE_AA)
+        _cv.putText(canvas, str(n_steps), (x_offset + width - 15, chart_y_start + chart_h + 12), font, 0.3, (100, 100, 100), 1, _cv.LINE_AA)
 
-    # Draw Left Chart
-    _draw_chart(left_rewards, 0, half_w - 5)
-    
-    # Draw Right Chart
-    _draw_chart(right_rewards, half_w + 5, half_w - 5)
+    chart_w = (W - left_margin - 30) // 2
+    _draw_chart(left_rewards, left_margin, chart_w, "ORIGINAL")
+    _draw_chart(right_rewards, left_margin + chart_w + 20, chart_w, "COUNTERFACTUAL")
     
     # Draw Separator
-    _cv.line(canvas, (half_w, chart_y_start), (half_w, total_h - 5), (200, 200, 200), 1)
+    _cv.line(canvas, (left_margin + chart_w + 10, chart_y_start - 20), (left_margin + chart_w + 10, total_h - 10), (220, 220, 220), 1)
+    
+    return canvas
     
     return canvas
 
