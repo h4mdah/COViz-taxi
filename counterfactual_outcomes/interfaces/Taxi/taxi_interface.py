@@ -109,8 +109,22 @@ class TaxiInterface(AbstractInterface):
                 model_dir = config.get('model_dir') or self.load_path or 'agents\\taxi_sb3'
                 # find latest .zip model in model_dir
                 model_files = sorted(glob.glob(join(model_dir, '*.zip')), key=os.path.getmtime, reverse=True)
-                print("Loaded model files:", model_files[0])
+                
+                if not model_files and config.get('train_if_missing', True):
+                    print(f"No model found in {model_dir}. Starting training...")
+                    try:
+                        self.train(
+                            env_id=config.get('env', {}).get('id', 'Taxi-v3-COViz'),
+                            total_timesteps=config.get('train_steps', 100_000),
+                            model_dir=model_dir
+                        )
+                        # Refresh file list after training
+                        model_files = sorted(glob.glob(join(model_dir, '*.zip')), key=os.path.getmtime, reverse=True)
+                    except Exception as train_err:
+                        print(f"Training failed: {train_err}")
+
                 if model_files:
+                    print("Loaded model files:", model_files[0])
                     sb3_model = DQN.load(model_files[0])
 
                     class SB3Adapter:
@@ -180,6 +194,27 @@ class TaxiInterface(AbstractInterface):
         agent_path = Path(join(self.load_path, 'checkpoint-final.tar'))
         evaluation.load_agent_model(agent_path)
         return evaluation
+
+    def train(self, env_id="Taxi-v3-COViz", total_timesteps=100_000, model_dir="agents/taxi_sb3"):
+        """Train a DQN model for the Taxi environment."""
+        import time
+        from stable_baselines3 import DQN
+        from pathlib import Path
+        
+        model_path_dir = Path(model_dir)
+        model_path_dir.mkdir(parents=True, exist_ok=True)
+        
+        train_env = gym.make(env_id)
+        model = DQN("MlpPolicy", train_env, verbose=1)
+        
+        print(f"Starting training on {env_id} for {total_timesteps} steps...")
+        model.learn(total_timesteps=total_timesteps)
+        
+        final_model = model_path_dir / "model_final.zip"
+        model.save(str(final_model))
+        print(f"Training finished. Final model saved to {final_model}")
+        train_env.close()
+        return final_model
     
     def get_state_action_values(self, agent, state):
         return agent.get_state_action_values(state)
@@ -391,7 +426,7 @@ class TaxiTrace(Trace):
 
 def taxi_config(args):
     args.config_filename = "metadata"
-    args.config_changes = {"env": {"id": 'Taxi-v3-COViz'}, "agent": {}}
+    args.config_changes = {"env": {"id": 'Taxi-v3-COViz'}, "agent": {}, "train_if_missing": True}
     args.data_name = ''
     args.name = "taxi_optimal"
     #check if path exists, otherwise train model

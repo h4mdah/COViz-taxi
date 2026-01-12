@@ -85,8 +85,11 @@ def get_config(load_path, filename, changes=None):
 
     # Apply changes if provided
     if changes:
-        for section in changes:
-            for k, v in changes[section].items():
-                config.setdefault(section, {})[k] = v
+        for section, contents in changes.items():
+            if isinstance(contents, dict):
+                for k, v in contents.items():
+                    config.setdefault(section, {})[k] = v
+            else:
+                config[section] = contents
 
     return config
