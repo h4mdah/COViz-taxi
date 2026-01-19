@@ -3,7 +3,7 @@
     "model_name": "best_model.zip",
     "train_steps": 100000,
     "env_name": "Taxi-v3",
-    "algorithm": "DQN",
+    "algorithm": "PPO",
     "traces_path": null,
     "n_traces": 5,
     "state_importance": "second",

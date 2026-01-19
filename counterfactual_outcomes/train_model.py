@@ -19,7 +19,7 @@ try:
 except Exception:
     import gym
 
-from stable_baselines3 import DQN
+from stable_baselines3 import DQN, PPO
 import numpy as np
 try:
     from PIL import Image, ImageDraw, ImageFont
@@ -148,7 +148,8 @@ def main(
     save_model_interval=20_000,
     out_traces_file="traces/taxi/taxi_traces.json",
     model_dir="agents/taxi_sb3",
-    k_steps=10
+    k_steps=10,
+    algo="DQN"
 ):
     repo = Path(REPO_ROOT)
     out_traces_path = repo / out_traces_file
@@ -166,8 +167,10 @@ def main(
 
     # create training env
     train_env = gym.make(env_id)
-
-    model = DQN("MlpPolicy", train_env, verbose=1)
+    if algo == "PPO":
+        model = PPO("MlpPolicy", train_env, verbose=1)
+    else:
+        model = DQN("MlpPolicy", train_env, verbose=1)
     accumulated_timesteps = 0
     # if existing model artifacts in model_dir you'd like to load, add logic here
 

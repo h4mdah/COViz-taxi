@@ -150,18 +150,25 @@ def online_comparison(env1, agent1, env2, agent2, args, evaluation1=None, evalua
         # update trace with fork state (previous action is agent1_a)
         trace.update(state_obj, obs, r, done, infos, agent1_a, state_id)
         # derive contrastive action for agent2 (reuse robust logic)
+        # derive contrastive action for agent2
         try:
-            vals = np.asarray(s_a_values)
-            if vals.size == 0 or np.allclose(vals, vals.flat[0]):
-                n_actions = vals.size if vals.size > 0 else getattr(getattr(agent1, 'action_space', None), 'n', None)
-                if n_actions is None or n_actions == 0:
-                    agent2_pref = agent2.interface.get_next_action(agent2, obs, state)
-                    agent2_a = agent2_pref if agent2_pref is not None else 0
+             # Delegate to the interface to decide the counterfactual action
+             # This handles DQN (2nd highest Q) and PPO (2nd highest Prob)
+             if hasattr(agent2.interface, 'get_counterfactual_action'):
+                 agent2_a = agent2.interface.get_counterfactual_action(agent2, obs, s_a_values)
+             else:
+                 # Fallback to legacy logic if interface doesn't implement it
+                vals = np.asarray(s_a_values)
+                if vals.size == 0 or np.allclose(vals, vals.flat[0]):
+                    n_actions = vals.size if vals.size > 0 else getattr(getattr(agent1, 'action_space', None), 'n', None)
+                    if n_actions is None or n_actions == 0:
+                        agent2_pref = agent2.interface.get_next_action(agent2, obs, state)
+                        agent2_a = agent2_pref if agent2_pref is not None else 0
+                    else:
+                        base = agent1_a if agent1_a is not None else 0
+                        agent2_a = (base + 1) % int(n_actions)
                 else:
-                    base = agent1_a if agent1_a is not None else 0
-                    agent2_a = (base + 1) % int(n_actions)
-            else:
-                agent2_a = sorted(list(enumerate(vals)), key=lambda x: x[1])[-2][0]
+                    agent2_a = sorted(list(enumerate(vals)), key=lambda x: x[1])[-2][0]
         except Exception:
             try:
                 agent2_a = agent2.interface.get_next_action(agent2, obs, state)

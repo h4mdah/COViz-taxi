@@ -35,6 +35,9 @@ class AbstractInterface(object):
     def pre_contrastive(self, env):
         return
 
+    def get_counterfactual_action(self, agent, obs, state_values=None):
+        return
+
     def post_contrastive(self, agent1, agent2, pre_params=None):
         return
 

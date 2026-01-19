@@ -1,0 +1,14 @@
+import gym, numpy as np
+try:
+    env = gym.make("Taxi-v3", render_mode="rgb_array")
+except Exception:
+    env = gym.make("Taxi-v3")
+o = env.reset()
+
+try:
+    f = env.render()
+    if f is None:
+        f = env.render(mode="rgb_array")
+except Exception as e:
+    print("render failed:", e)
+print("frame present?", isinstance(f, (list, tuple, np.ndarray)))
