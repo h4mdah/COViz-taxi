@@ -25,7 +25,7 @@
     "min_traj_len": 1,
     "no_mark": false,
     "multi_head": true,
-    "model_dir": "C:\\Users\\hmari\\Desktop\\THI_KI\\S5\\COViz-taxi\\agents\\taxi_sb3\\",
+    "model_dir": "C:\\Users\\hmari\\Desktop\\THI_KI\\S5\\COViz-taxi\\agents\\taxi_ppo\\",
     "sync_prefix": 4,
     "dump_env_diff": true,
     "start_state": 123

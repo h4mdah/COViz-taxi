@@ -559,7 +559,22 @@ class TaxiInterface(AbstractInterface):
             # So we want the 2nd highest.
             sorted_actions = sorted(list(enumerate(vals)), key=lambda x: x[1])
             # sorted is ascending, so best is [-1], 2nd best is [-2]
-            return sorted_actions[-2][0]
+            best_action = sorted_actions[-1][0]
+            contra_action = sorted_actions[-2][0]
+            
+            # Additional debug for PPO verification
+            try:
+                # Basic heuristic to check if these are probabilities (sum to approx 1, all positive)
+                is_probs = np.all(vals >= 0) and np.isclose(np.sum(vals), 1.0, atol=0.05)
+                if is_probs:
+                    print(f"DEBUG [PPO Counterfactual]:")
+                    print(f"  Actions/Probs: {sorted_actions}")
+                    print(f"  Best Action: {best_action} (Prob: {vals[best_action]:.4f})")
+                    print(f"  Counterfactual: {contra_action} (Prob: {vals[contra_action]:.4f})")
+            except Exception:
+                pass
+
+            return contra_action
 
         except Exception as e:
             print(f"DEBUG: Error in get_counterfactual_action: {e}")
