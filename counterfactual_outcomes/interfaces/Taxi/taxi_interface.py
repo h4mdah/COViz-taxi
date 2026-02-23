@@ -16,6 +16,7 @@ import random, numpy as _np
 from copy import deepcopy
 
 import counterfactual_outcomes.interfaces.Taxi.environments
+from counterfactual_outcomes.interfaces.Taxi.critical_states import TaxiCriticalStates
 try:
     from tools.custom_ppo import PPO, Memory
 except ImportError:
@@ -510,14 +511,27 @@ class TaxiInterface(AbstractInterface):
 
         # Fallback: try to decode from a provided observation if it's an int
         try:
-            # callers in this repo pass obs separately; attempt to get it from
-            # a global-like place if available (not ideal) — prefer explicit pass.
-            # We don't have obs here reliably; return placeholders.
-            pass
+            # use critical_states class to get more info
+            cs = TaxiCriticalStates(env)
+            s_val = None
+            if obs is not None:
+                s_val = obs[0] if isinstance(obs, tuple) else obs
+            
+            if isinstance(s_val, (int, np.integer)):
+                row, col, pass_idx, dest_idx = cs.decode(s_val)
+                cat = cs.get_criticality_category(s_val)
+                score = cs.get_importance_score(s_val)
+                return {
+                    "position": (row, col),
+                    "passenger_status": pass_idx,
+                    "destination": dest_idx,
+                    "criticality": cat,
+                    "importance_score": score
+                }
         except Exception:
             pass
 
-        return {"position": None, "passenger_status": None, "destination": None}
+        return {"position": None, "passenger_status": None, "destination": None, "criticality": "UNKNOWN", "importance_score": 0.0}
 
           
     
