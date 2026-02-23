@@ -1,5 +1,5 @@
 import numpy as np
-
+import gymnasium as gym
 from highway_env.envs import HighwayEnv
 from gymnasium.envs.registration import register
 from highway_env.utils import lmap
@@ -9,6 +9,18 @@ from highway_env.envs.common.action import Action
 
 class Plain(HighwayEnv):
     """rewarded for driving in parallel to a car"""
+    metadata = {"render_modes": ["rgb_array"]}
+
+    @classmethod
+    def default_config(cls) -> dict:
+        config = super().default_config()
+        config.update({
+            "keep_distance_reward": 1.0,
+            "high_speed_reward": 0.4,
+            "collision_reward": -1.0,
+            "reward_speed_range": [20, 30],
+        })
+        return config
 
     def _reward(self, action: Action) -> float:
         obs = self.observation_type.observe()
@@ -34,4 +46,46 @@ class Plain(HighwayEnv):
 register(
     id='Plain-v0',
     entry_point='counterfactual_outcomes.interfaces.Highway.environments:Plain',
+)
+
+class HighwayEnvWrapper(gym.Wrapper):
+    """Wrapper to ensure consistent COViz API for Highway environments."""
+    metadata = {"render_modes": ["rgb_array"]}
+    def __init__(self, env_id='Plain-v0', **kwargs):
+        # ensure render_mode is set for COViz visualization
+        if 'render_mode' not in kwargs:
+            kwargs['render_mode'] = 'rgb_array'
+        env = gym.make(env_id, **kwargs)
+        super().__init__(env)
+        self.env_id = env_id
+
+    def reset(self, **kwargs):
+        res = self.env.reset(**kwargs)
+        if isinstance(res, tuple) and len(res) == 2:
+            return res
+        return res, {}
+
+    def step(self, action):
+        res = self.env.step(action)
+        if isinstance(res, tuple) and len(res) == 5:
+            return res
+        obs, reward, done, info = res
+        return obs, reward, bool(done), False, info
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        # Highway environments often have complex internal state; 
+        # for COViz we mostly care about the wrapper state and underlying env recreation
+        del state['env']
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self.env = gym.make(self.env_id, render_mode='rgb_array')
+        self.env.reset()
+
+register(
+    id='Highway-v0-COViz',
+    entry_point='counterfactual_outcomes.interfaces.Highway.environments:HighwayEnvWrapper',
+    kwargs={'env_id': 'Plain-v0'}
 )

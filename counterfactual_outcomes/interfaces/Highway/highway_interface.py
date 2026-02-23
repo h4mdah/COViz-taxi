@@ -1,3 +1,11 @@
+import sys
+from pathlib import Path
+
+# Add project root to sys.path
+REPO_ROOT = Path(__file__).resolve().parents[3]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 import cv2
 import numpy as np
 from PIL import ImageFont, Image, ImageDraw
@@ -17,8 +25,11 @@ from rl_agents.agents.common.factory import agent_factory
 from counterfactual_outcomes.interfaces.abstract_interface import AbstractInterface
 from rl_agents.trainer.evaluation import Evaluation
 import counterfactual_outcomes.interfaces.Highway
-import multi_head.highway_env_local.envs.highway_env_local
-from multi_head.DQNAgent_local_files.pytorch_local import DQNAgent
+try:
+    import multi_head.highway_env_local.envs.highway_env_local
+    from multi_head.DQNAgent_local_files.pytorch_local import DQNAgent
+except ImportError:
+    DQNAgent = None
 
 
 # ACTION_DICT = {0: 'LANE_LEFT', 1: 'IDLE', 2: 'LANE_RIGHT', 3: 'FASTER', 4: 'SLOWER'}
@@ -43,10 +54,20 @@ class HighwayInterface(AbstractInterface):
         config, output_dir = self.config, self.output_dir
         env_config, agent_config = config['env'], config['agent']
         env = gym.make(env_config["id"])
-        env.seed(seed)
+        try:
+            if hasattr(env, 'seed'):
+                env.seed(seed)
+        except Exception:
+            pass
+        try:
+            env.reset(seed=seed)
+        except Exception:
+            pass
         env_config.update({"simulation_frequency": 15, "policy_frequency": 5, })
-        env.configure(env_config)
-        env.define_spaces()
+        if hasattr(env, 'configure'):
+            env.configure(env_config)
+        if hasattr(env, 'define_spaces'):
+            env.define_spaces()
         agent = agent_factory(env, agent_config)
         agent.exploration_policy = exploration_factory({'method': 'Greedy'}, env.action_space)
         if evaluation_reset:
@@ -73,7 +94,7 @@ class HighwayInterface(AbstractInterface):
     def get_next_action(self, agent, obs, state):
         return agent.act(state)
 
-    def get_features(self, env):
+    def get_features(self, env, obs=None):
         return {"position": copy(env.road.vehicles[0].destination)}
 
     def contrastive_trace(self, trace_idx, k_steps, params=None):
@@ -178,11 +199,13 @@ def highway_config(args):
     """highway"""
     args.config_filename = "metadata"
     """Highlight parameters"""
-    args.config_changes = {"env": {}, "agent": {}}
+    args.config_changes = {
+        "env": {"id": "Highway-v0-COViz"},
+        "agent": {"__class__": "<class 'rl_agents.agents.deep_q_network.pytorch.DQNAgent'>"}
+    }
     args.data_name = ''
-    args.name = "rightLaneChangeLane"
-    # args.name = "Plain_old"
-    args.load_path = abspath(f'../agents/{args.interface}/{args.name}')
+    args.name = "trained_model"
+    args.load_path = abspath(f'agents/{args.interface}/{args.name}')
     args.n_traces = 10
     args.k_steps = 15
     args.overlay = args.k_steps // 2
