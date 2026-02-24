@@ -17,6 +17,25 @@ class TaxiCriticalStates:
         3: (4, 3)   # B
     }
 
+    # Internal walls in Taxi-v3, encoded as pairs of adjacent cells
+    # that are separated by a wall: ((row, col_left), (row, col_right))
+    # Derived from the Taxi-v3 map:
+    #   +---------+
+    #   |R: | : :G|
+    #   | : | : : |
+    #   | : : : : |
+    #   | | : | : |
+    #   |Y| : |B: |
+    #   +---------+
+    WALLS = {
+        ((0, 1), (0, 2)),  # wall between col 1 and col 2 at row 0
+        ((1, 1), (1, 2)),  # wall between col 1 and col 2 at row 1
+        ((3, 0), (3, 1)),  # wall between col 0 and col 1 at row 3
+        ((4, 0), (4, 1)),  # wall between col 0 and col 1 at row 4
+        ((3, 2), (3, 3)),  # wall between col 2 and col 3 at row 3
+        ((4, 2), (4, 3)),  # wall between col 2 and col 3 at row 4
+    }
+
     def __init__(self, env=None):
         self._env = env
         # Cache mapping of location index to coordinates for quick lookup
@@ -53,6 +72,45 @@ class TaxiCriticalStates:
     def is_at_any_landmark(self, row, col):
         """Checks if the taxi is at one of the four landmarks R, G, Y, B."""
         return (row, col) in self.LOCATIONS.values()
+
+    def is_wall_hit(self, row, col, action):
+        """
+        Returns True if the given movement action from (row, col) would
+        result in hitting a wall or the grid boundary (wasted move).
+        Actions: 0=South, 1=North, 2=East, 3=West
+        """
+        if action == 0:  # South
+            return row >= 4
+        elif action == 1:  # North
+            return row <= 0
+        elif action == 2:  # East
+            if col >= 4:
+                return True
+            return ((row, col), (row, col + 1)) in self.WALLS
+        elif action == 3:  # West
+            if col <= 0:
+                return True
+            return ((row, col - 1), (row, col)) in self.WALLS
+        return False
+
+    def get_wall_actions(self, state):
+        """
+        Returns a list of movement actions (0-3) that would hit a wall
+        or boundary from this state. These are wasted moves.
+        """
+        row, col, _, _ = self.decode(state)
+        blocked = []
+        for action in range(4):  # only movement actions
+            if self.is_wall_hit(row, col, action):
+                blocked.append(action)
+        return blocked
+
+    def is_near_wall(self, state):
+        """
+        Returns True if at least one movement direction is blocked by a wall
+        or boundary. Useful for identifying constrained navigation states.
+        """
+        return len(self.get_wall_actions(state)) > 0
 
     def is_pickup_possible(self, state):
         """Returns True if the taxi is at the same location as the passenger."""
@@ -100,7 +158,13 @@ class TaxiCriticalStates:
         row, col, pass_idx, dest_idx = self.decode(state)
         if self.is_at_any_landmark(row, col):
             return "LANDMARK"
-            
+
+        wall_actions = self.get_wall_actions(state)
+        if len(wall_actions) >= 2:
+            return "WALL_CORNER"
+        elif len(wall_actions) == 1:
+            return "WALL_ADJACENT"
+
         return "NORMAL"
 
     def get_importance_score(self, state, agent=None):
@@ -112,6 +176,13 @@ class TaxiCriticalStates:
         if self.is_pickup_possible(state) or self.is_dropoff_possible(state):
             score += 5.0
         
+        # Wall-adjacent states are trickier to navigate, bump importance slightly
+        wall_actions = self.get_wall_actions(state)
+        if len(wall_actions) >= 2:
+            score += 1.5  # corner or dead-end
+        elif len(wall_actions) == 1:
+            score += 0.5  # wall on one side
+
         if agent is not None:
             try:
                 # Regret-based importance
