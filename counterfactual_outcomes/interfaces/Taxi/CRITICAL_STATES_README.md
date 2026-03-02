@@ -11,13 +11,7 @@ The main class is `TaxiCriticalStates`. Given a state index, it can tell you whe
 
 ### Constructor
 
-```python
-TaxiCriticalStates(env=None)
-```
-
-| Parameter | Type | Description |
-|---|---|---|
-| `env` | `gymnasium.Env` or `None` | An existing environment instance can be passed in. If not provided, a temporary Taxi-v3 env gets created internally to access the `decode` function. |
+| `env` | `gymnasium.Env` or `None` | An existing environment instance can be passed in. If not provided, a fallback fast math decoding function gets used internally instead of creating temporary environments. |
 
 ### Landmark Mapping
 
@@ -85,37 +79,6 @@ cs.decode(123)  # → [2, 2, 3, 0]  (taxi at row 2, col 2, passenger at B, desti
 #### `is_at_any_landmark(row, col) → bool`
 Simple check — returns `True` if the taxi is sitting on one of the four landmarks (R, G, Y, B).
 
----
-
-#### `is_wall_hit(row, col, action) → bool`
-Checks if a specific movement action from `(row, col)` would result in hitting a wall or the grid boundary. When this returns `True`, the taxi wouldn't actually move but would still get the `-1` step penalty — basically a wasted move.
-
-Actions are: `0=South, 1=North, 2=East, 3=West`.
-
-```python
-cs = TaxiCriticalStates()
-cs.is_wall_hit(0, 0, 1)  # True — can't go North from row 0
-cs.is_wall_hit(0, 1, 2)  # True — wall between col 1 and col 2 at row 0
-cs.is_wall_hit(2, 2, 2)  # False — row 2 has no internal walls
-```
-
----
-
-#### `get_wall_actions(state) → list`
-Returns which movement actions (0–3) would hit a wall from this state. Useful for quickly seeing how constrained the taxi's movement is.
-
-```python
-cs = TaxiCriticalStates()
-cs.get_wall_actions(0)  # → [1, 3]  (can't go North or West from corner R)
-```
-
----
-
-#### `is_near_wall(state) → bool`
-Returns `True` if at least one movement direction is blocked. Helpful for flagging states where the agent has to be more careful about which direction it picks.
-
----
-
 #### `is_pickup_possible(state) → bool`
 Returns `True` when the taxi is at the **same spot as the passenger** and the passenger hasn't been picked up yet (`pass_idx ≠ 4`). Basically, this is when doing `action=4 (Pickup)` would actually work.
 
@@ -140,16 +103,51 @@ Returns `True` if doing a Dropoff here would cause a **−10 penalty**. That hap
 
 ---
 
-#### `get_criticality_category(state) → str`
+#### `is_bottleneck(state) → bool`
+Returns `True` if the taxi is at a chokepoint that connects segregated areas of the grid.
+
+Logic: a chokepoint is represented as an undirected endpoint pair. A wrong
+move at either endpoint while heading toward the other can force a long detour
+(multiple `-1` step penalties). Treat either endpoint as a critical navigational
+decision point — the connection works bidirectionally.
+
+Chokepoint endpoint pairs used by the implementation:
+- `(0, 2) <-> (4, 1)`
+- `(0, 2) <-> (3, 2)`
+- `(1, 2) <-> (3, 1)`
+- `(2, 1) <-> (2, 2)`
+- `(1, 2) <-> (2, 2)`
+
+---
+
+#### `is_one_step_away(state) → bool`
+Returns `True` if the taxi is exactly one Manhattan step from the active target, and the correct structural move lands the taxi on the target.
+
+---
+
+#### `is_high_uncertainty(state, agent) → bool`
+Returns `True` when a given PPO agent policy has a difference of `< 0.15` between its top-1 and top-2 predicted action probabilities, indicating hesitation.
+
+---
+
+#### `is_alignment_turning(state) → bool`
+Returns `True` if the taxi shares a row/col with the target, but a wall interrupts the direct line of sight, forcing a 90-degree detour.
+
+---
+
+#### `get_criticality_category(state, agent=None) → str`
 The main categorization method. Returns a label depending on what's going on in the state:
 
 | Category | When it applies |
 |---|---|
 | `"PICKUP_ZONE"` | Taxi is at the passenger's location and the passenger is waiting |
 | `"DROPOFF_ZONE"` | Taxi is at the destination with the passenger on board |
-| `"LANDMARK"` | Taxi is at one of the landmarks but can't do a pickup or dropoff |
-| `"WALL_CORNER"` | Taxi has 2+ directions blocked by walls/boundaries (corner or dead-end) |
-| `"WALL_ADJACENT"` | Taxi has exactly 1 direction blocked by a wall/boundary |
+| `"ONE_STEP_AWAY"` | Taxi is exactly one step from target and next valid move lands on target |
+| `"BOTTLENECK"` | Taxi is at one of the two chokepoint passages (row 2, col 1 or 2) |
+| `"BOTTLENECK"` | Taxi is at one endpoint of a chokepoint pair (see `BOTTLENECK_PAIRS` in the module) |
+| `"HIGH_UNCERTAINTY"`| PPO agent action probabilities are very close (requires passing `agent`) |
+| `"ALIGNMENT_TURNING"`| Taxi shares row/col with target but wall forces a 90-degree detour |
+| `"LANDMARK"` | Taxi is at one of the landmarks but none of the above apply |
 | `"NORMAL"` | Everything else |
 
 ```python
@@ -164,19 +162,21 @@ Computes a numeric score for how important a state is. Higher means more critica
 
 **How the score works:**
 1. **+5.0** if the agent can do a successful pickup or dropoff here.
-2. **+1.5** if the taxi is in a corner or dead-end (2+ blocked directions) — these are spots where a wrong move wastes a step.
-3. **+0.5** if the taxi has one direction blocked by a wall.
-4. **+regret** if an agent is provided — this is the gap between the best and second-best action value. A big gap means the agent is very "sure" about what to do, which usually means the state matters a lot.
+2. **+3.0** if the taxi is one step away from the target location.
+3. **+2.0** if the taxi is at a bottleneck chokepoint.
+4. **+1.5** if the taxi is aligned with the target but a wall forces a turning detour.
+5. **+0.5** if the taxi is at a landmark (and none of the above are true).
+6. **+uncertainty** (up to +2.0) if an agent is provided — this rewards states where the agent is highly uncertain (a small gap between best and second-best action value for PPO, or inverted scaled regret for DQN). A higher uncertainty score means the state is a critical decision boundary.
 
 | Parameter | Type | Description |
 |---|---|---|
 | `state` | `int` | Discrete state index (0–499) |
-| `agent` | object or `None` | Any agent that has a `get_state_action_values(state)` method — works with both DQN (Q-values) and PPO (action probabilities) |
+| `agent` | object or `None` | Any agent that has a `get_state_action_values(state)` method |
 
 ```python
-cs = TaxiCriticalStates(env)
+cs = TaxiCriticalStates()
 score = cs.get_importance_score(state=328, agent=my_agent)
-# score = 5.0 + 3.2  (pickup possible + high regret)
+# score = 5.0 + 1.2  (pickup possible + high uncertainty)
 ```
 
 ---
