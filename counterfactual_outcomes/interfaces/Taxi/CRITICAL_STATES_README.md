@@ -104,19 +104,13 @@ Returns `True` if doing a Dropoff here would cause a **−10 penalty**. That hap
 ---
 
 #### `is_bottleneck(state) → bool`
-Returns `True` if the taxi is at a chokepoint that connects segregated areas of the grid.
+Returns `True` if the taxi is at one of the doorway tiles in the middle horizontal corridor (row 2). These tiles are forced passage points — the taxi must cross through them to move between segregated areas of the grid. A wrong move here forces a long detour (multiple `-1` step penalties), making these states highly critical.
 
-Logic: a chokepoint is represented as an undirected endpoint pair. A wrong
-move at either endpoint while heading toward the other can force a long detour
-(multiple `-1` step penalties). Treat either endpoint as a critical navigational
-decision point — the connection works bidirectionally.
-
-Chokepoint endpoint pairs used by the implementation:
-- `(0, 2) <-> (4, 1)`
-- `(0, 2) <-> (3, 2)`
-- `(1, 2) <-> (3, 1)`
-- `(2, 1) <-> (2, 2)`
-- `(1, 2) <-> (2, 2)`
+Bottleneck positions:
+- `(2, 0)` — left end of middle corridor
+- `(2, 1)` — passage between top wall and bottom-left wall
+- `(2, 2)` — passage between top wall and bottom-right wall
+- `(2, 3)` — right end of middle corridor
 
 ---
 
@@ -143,8 +137,7 @@ The main categorization method. Returns a label depending on what's going on in 
 | `"PICKUP_ZONE"` | Taxi is at the passenger's location and the passenger is waiting |
 | `"DROPOFF_ZONE"` | Taxi is at the destination with the passenger on board |
 | `"ONE_STEP_AWAY"` | Taxi is exactly one step from target and next valid move lands on target |
-| `"BOTTLENECK"` | Taxi is at one of the two chokepoint passages (row 2, col 1 or 2) |
-| `"BOTTLENECK"` | Taxi is at one endpoint of a chokepoint pair (see `BOTTLENECK_PAIRS` in the module) |
+| `"BOTTLENECK"` | Taxi is at one of the doorway tiles in row 2: (2,0), (2,1), (2,2), (2,3) |
 | `"HIGH_UNCERTAINTY"`| PPO agent action probabilities are very close (requires passing `agent`) |
 | `"ALIGNMENT_TURNING"`| Taxi shares row/col with target but wall forces a 90-degree detour |
 | `"LANDMARK"` | Taxi is at one of the landmarks but none of the above apply |
