@@ -321,22 +321,28 @@ class TaxiCriticalStates:
         """
         Returns the highest-priority criticality label for the state.
 
-        Priority order (highest first):
-          PICKUP_ZONE → DROPOFF_ZONE → ONE_STEP_AWAY → BOTTLENECK →
-          HIGH_UNCERTAINTY → ALIGNMENT_TURNING → LANDMARK → NORMAL
+        Strict precedence order (highest first):
+          1. PICKUP_ZONE      – taxi is at the passenger's pickup location
+          2. DROPOFF_ZONE     – taxi is at the passenger's dropoff location
+          3. HIGH_UNCERTAINTY – agent action distribution is highly uncertain
+          4. ONE_STEP_AWAY    – taxi is one move from the target location
+          5. ALIGNMENT_TURNING – taxi is aligned or turning toward the target
+          6. BOTTLENECK       – taxi is at a grid bottleneck cell
+          7. LANDMARK         – taxi is at a named landmark
+          8. NORMAL           – none of the above
         """
         if self.is_pickup_possible(state):
             return "PICKUP_ZONE"
         if self.is_dropoff_possible(state):
             return "DROPOFF_ZONE"
-        if self.is_one_step_away(state):
-            return "ONE_STEP_AWAY"
-        if self.is_bottleneck(state):
-            return "BOTTLENECK"
         if agent is not None and self.is_high_uncertainty(state, agent):
             return "HIGH_UNCERTAINTY"
+        if self.is_one_step_away(state):
+            return "ONE_STEP_AWAY"
         if self.is_alignment_turning(state):
             return "ALIGNMENT_TURNING"
+        if self.is_bottleneck(state):
+            return "BOTTLENECK"
 
         row, col, _, _ = self.decode(state)
         if self.is_at_any_landmark(row, col):
