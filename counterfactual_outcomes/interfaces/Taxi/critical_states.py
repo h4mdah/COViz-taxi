@@ -10,8 +10,9 @@ class TaxiCriticalStates:
       DROPOFF_ZONE      – Passenger is in taxi and taxi is at destination.
       ONE_STEP_AWAY     – Taxi is exactly one Manhattan step from the target and
                           the correct next action is a movement onto the target.
-      BOTTLENECK        – Taxi is at one of the two map chokepoints that bridge
-                          the left/right segregated areas (cols 1↔2 passages).
+      BOTTLENECK        – Taxi is on one of the key transit tiles in the row-2
+                          corridor (the only open passage through the internal
+                          wall segments).
       HIGH_UNCERTAINTY  – Top-2 PPO action probabilities are very close (agent
                           is uncertain). Only meaningful for PPO; needs agent.
       ALIGNMENT_TURNING – Taxi shares row or column with the target but a wall
@@ -33,46 +34,39 @@ class TaxiCriticalStates:
 
     # ─────────────────────────────────────────────────────────────────────────
     # Bottleneck chokepoints
-    # These chokepoints are single-cell passages that connect segregated areas
-    # of the map. Making a wrong move at these cells forces the agent to take
-    # a long detour, incurring multiple -1 step penalties — they are therefore
-    # the most critical purely navigational states.
+    # A bottleneck is a doorway forced by the internal walls — the tiles the
+    # taxi *must* stand on to transit between the segregated areas of the map.
     #
-    # Bottleneck pairs are defined in `BOTTLENECK_PAIRS` below. Each entry is
-    # a (start, end) coordinate pair that connects segregated pockets of the
-    # grid; a wrong move at the start cell forces a long detour to the end
-    # cell (multiple -1 step penalties).
+    # The Taxi-v3 grid has three internal wall segments (vertical, blocking
+    # East/West movement):
+    #   • Top wall      – rows 0-1 between col 1 and col 2
+    #   • Bottom-left   – rows 3-4 between col 0 and col 1
+    #   • Bottom-right  – rows 3-4 between col 2 and col 3
+    #
+    # Row 2 has no internal walls, so it forms the open horizontal corridor.
+    # The key transit tiles are:
+    #   To cross the top wall        → (2,1) or (2,2)
+    #   To cross the bottom-left     → (2,0) or (2,1)
+    #   To cross the bottom-right    → (2,2) or (2,3)
+    #
+    # Union of all transit tiles: the entire row-2 corridor.
     # ─────────────────────────────────────────────────────────────────────────
-    # ─────────────────────────────────────────────────────────────────────────
-    # Bottleneck chokepoints (pairs)
-    # These are pairs of coordinates (start, end) that represent connected
-    # segregated areas of the map. A wrong move at the start cell while
-    # navigating toward the end cell forces a long detour (multiple -1 step
-    # penalties), so we treat these as critical navigational pairs.
-    BOTTLENECK_PAIRS = {
-        ((0, 2), (4, 1)),
-        ((0, 2), (3, 2)),
-        ((1, 2), (3, 1)),
-        ((2, 1), (2, 2)),
-        ((1, 2), (2, 2)),
+    BOTTLENECK_TILES = {
+        (2, 0),
+        (2, 1),
+        (2, 2),
+        (2, 3),
     }
 
-    # NOTE: derive positions lazily to keep the pair list authoritative and
-    # avoid stale derived sets if callers modify `BOTTLENECK_PAIRS` at runtime.
     @property
     def bottleneck_positions(self):
-        """Return the set of all endpoint coordinates referenced by pairs.
-
-        Access via `self.bottleneck_positions` (preferred) or use
-        `self.is_bottleneck_start(...)` / `self.is_bottleneck(...)` helpers.
-        """
-        return {p for pair in self.BOTTLENECK_PAIRS for p in pair}
+        """Return the set of key transit tile coordinates (row-2 corridor)."""
+        return self.BOTTLENECK_TILES
 
     def is_bottleneck_start(self, state=None, coords=None):
-        """Return True if the given state or (row,col) tuple is an endpoint of
-        any chokepoint pair. Pairs are treated as undirected connections: an
-        endpoint behaves the same regardless of which side is considered
-        'start' or 'end'.
+        """Return True if the given state or (row,col) tuple is a bottleneck
+        transit tile — i.e. one of the cells the taxi must occupy to cross an
+        internal wall segment.
 
         Provide either `state` (discrete int) or `coords` as a (row,col) pair.
         """
@@ -83,12 +77,9 @@ class TaxiCriticalStates:
         else:
             raise ValueError("Provide either state or coords")
 
-        # Treat pairs as undirected — check membership in the endpoint set.
-        return (row, col) in self.bottleneck_positions
+        return (row, col) in self.BOTTLENECK_TILES
 
-    # Backwards-compatible alias: older callers expecting a "start" check can
-    # continue to call `is_bottleneck_start`, which now treats endpoints
-    # bidirectionally. For clarity, provide an explicit alias name too.
+    # Backwards-compatible alias.
     is_bottleneck_endpoint = is_bottleneck_start
 
     # Internal walls: pairs ((row, col_left), (row, col_right)) separated by
@@ -218,17 +209,16 @@ class TaxiCriticalStates:
 
     def is_bottleneck(self, state):
         """
-        True if taxi is at one of the map's major chokepoints. These single-cell
-        passages connect segregated pockets of the grid; a wrong move here
-        forces a long detour (multiple -1 step penalties), making the state
-        highly critical from a navigational perspective.
+        True if taxi is standing on one of the key transit tiles in the row-2
+        corridor — the only open passage through the internal wall segments.
 
-        Coordinates used: endpoints of `BOTTLENECK_PAIRS` —
-        ((0,2) -> (4,1)), ((0,2) -> (3,2)), ((1,2) -> (3,1)),
-        ((2,1) -> (2,2)), ((1,2) -> (2,2)).
+        Transit tiles: (2,0), (2,1), (2,2), (2,3).
+          • (2,1) or (2,2) – required to cross the top wall (rows 0-1, col 1|2)
+          • (2,0) or (2,1) – required to cross the bottom-left wall (rows 3-4, col 0|1)
+          • (2,2) or (2,3) – required to cross the bottom-right wall (rows 3-4, col 2|3)
         """
         row, col, _, _ = self.decode(state)
-        return (row, col) in self.bottleneck_positions
+        return (row, col) in self.BOTTLENECK_TILES
 
     def is_one_step_away(self, state):
         """

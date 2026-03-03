@@ -104,19 +104,14 @@ Returns `True` if doing a Dropoff here would cause a **−10 penalty**. That hap
 ---
 
 #### `is_bottleneck(state) → bool`
-Returns `True` if the taxi is at a chokepoint that connects segregated areas of the grid.
+Returns `True` if the taxi is standing on one of the key transit tiles in the row-2 corridor — the only open horizontal passage through the internal wall segments.
 
-Logic: a chokepoint is represented as an undirected endpoint pair. A wrong
-move at either endpoint while heading toward the other can force a long detour
-(multiple `-1` step penalties). Treat either endpoint as a critical navigational
-decision point — the connection works bidirectionally.
+Row 2 has no internal walls, making it the only route between the areas separated by the three wall segments:
+- **Top wall** (rows 0–1, between col 1 and col 2): must pass through `(2,1)` or `(2,2)`
+- **Bottom-left wall** (rows 3–4, between col 0 and col 1): must pass through `(2,0)` or `(2,1)`
+- **Bottom-right wall** (rows 3–4, between col 2 and col 3): must pass through `(2,2)` or `(2,3)`
 
-Chokepoint endpoint pairs used by the implementation:
-- `(0, 2) <-> (4, 1)`
-- `(0, 2) <-> (3, 2)`
-- `(1, 2) <-> (3, 1)`
-- `(2, 1) <-> (2, 2)`
-- `(1, 2) <-> (2, 2)`
+The union of these transit tiles is the entire row-2 corridor: `{(2,0), (2,1), (2,2), (2,3)}`.
 
 ---
 
@@ -143,8 +138,7 @@ The main categorization method. Returns a label depending on what's going on in 
 | `"PICKUP_ZONE"` | Taxi is at the passenger's location and the passenger is waiting |
 | `"DROPOFF_ZONE"` | Taxi is at the destination with the passenger on board |
 | `"ONE_STEP_AWAY"` | Taxi is exactly one step from target and next valid move lands on target |
-| `"BOTTLENECK"` | Taxi is at one of the two chokepoint passages (row 2, col 1 or 2) |
-| `"BOTTLENECK"` | Taxi is at one endpoint of a chokepoint pair (see `BOTTLENECK_PAIRS` in the module) |
+| `"BOTTLENECK"` | Taxi is on one of the key transit tiles in the row-2 corridor: `(2,0)`, `(2,1)`, `(2,2)`, or `(2,3)` |
 | `"HIGH_UNCERTAINTY"`| PPO agent action probabilities are very close (requires passing `agent`) |
 | `"ALIGNMENT_TURNING"`| Taxi shares row/col with target but wall forces a 90-degree detour |
 | `"LANDMARK"` | Taxi is at one of the landmarks but none of the above apply |
