@@ -33,8 +33,8 @@ class TaxiCriticalStates:
     SOUTH, NORTH, EAST, WEST = 0, 1, 2, 3
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Bottleneck chokepoints
-    # A bottleneck is a doorway forced by the internal walls — the tiles the
+    # Chokepoint tiles
+    # A chokepoint is a doorway forced by the internal walls — the tiles the
     # taxi *must* stand on to transit between the segregated areas of the map.
     #
     # The Taxi-v3 grid has three internal wall segments (vertical, blocking
@@ -51,20 +51,23 @@ class TaxiCriticalStates:
     #
     # Union of all transit tiles: the entire row-2 corridor.
     # ─────────────────────────────────────────────────────────────────────────
-    BOTTLENECK_TILES = {
+    CHOKEPOINT_TILES = {
         (2, 0),
         (2, 1),
         (2, 2),
         (2, 3),
     }
 
+# Backwards-compatible name
+    BOTTLENECK_TILES = CHOKEPOINT_TILES
+
     @property
     def bottleneck_positions(self):
         """Return the set of key transit tile coordinates (row-2 corridor)."""
         return self.BOTTLENECK_TILES
 
-    def is_bottleneck_start(self, state=None, coords=None):
-        """Return True if the given state or (row,col) tuple is a bottleneck
+    def is_chokepoint_start(self, state=None, coords=None):
+        """Return True if the given state or (row,col) tuple is a chokepoint
         transit tile — i.e. one of the cells the taxi must occupy to cross an
         internal wall segment.
 
@@ -77,10 +80,12 @@ class TaxiCriticalStates:
         else:
             raise ValueError("Provide either state or coords")
 
-        return (row, col) in self.BOTTLENECK_TILES
+        return (row, col) in self.CHOKEPOINT_TILES
 
-    # Backwards-compatible alias.
-    is_bottleneck_endpoint = is_bottleneck_start
+    # Backwards-compatible aliases.
+    is_chokepoint_endpoint = is_chokepoint_start
+    is_bottleneck_start = is_chokepoint_start
+    is_bottleneck_endpoint = is_chokepoint_start
 
     # Internal walls: pairs ((row, col_left), (row, col_right)) separated by
     # a vertical wall segment.
@@ -218,7 +223,11 @@ class TaxiCriticalStates:
           • (2,2) or (2,3) – required to cross the bottom-right wall (rows 3-4, col 2|3)
         """
         row, col, _, _ = self.decode(state)
-        return (row, col) in self.BOTTLENECK_TILES
+        return (row, col) in self.CHOKEPOINT_TILES
+
+    # Backwards-compatible alias
+    def is_chokepoint(self, state):
+        return self.is_bottleneck(state)
 
     def is_one_step_away(self, state):
         """
@@ -244,6 +253,76 @@ class TaxiCriticalStates:
         for action in (self.SOUTH, self.NORTH, self.EAST, self.WEST):
             nr, nc = self._movement_result(row, col, action)
             if (nr, nc) == target:
+                return True
+        return False
+
+    # ─── Shortest-path utilities for divergence detection ───────────────────
+
+    def _shortest_path_length(self, start, target):
+        """Compute shortest path length on the Taxi grid from start->target
+        using allowed movements (respects internal vertical walls and bounds).
+        start/target are (row,col) tuples. Returns an integer distance or
+        a large value if unreachable.
+        """
+        from collections import deque
+
+        if start == target:
+            return 0
+
+        q = deque([(start, 0)])
+        seen = {start}
+        while q:
+            (r, c), d = q.popleft()
+            for action in (self.SOUTH, self.NORTH, self.EAST, self.WEST):
+                nr, nc = self._movement_result(r, c, action)
+                if (nr, nc) == (r, c):
+                    # blocked movement
+                    continue
+                if (nr, nc) in seen:
+                    continue
+                if (nr, nc) == target:
+                    return d + 1
+                seen.add((nr, nc))
+                q.append(((nr, nc), d + 1))
+
+        return 10**6
+
+    # ─── Divergence point detection ────────────────────────────────────────
+
+    DIVERGENCE_DETOUR_THRESHOLD = 2
+
+    def is_divergence_point(self, state):
+        """Return True for states where committing to an incorrect movement
+        direction produces a large detour to the active target. This is
+        computed by simulating each available movement and comparing the
+        resulting shortest-path lengths; if any legal action increases the
+        distance by at least `DIVERGENCE_DETOUR_THRESHOLD` relative to the
+        best available move, the state is flagged as a divergence point.
+        """
+        row, col, pass_idx, dest_idx = self.decode(state)
+
+        if pass_idx != 4:
+            target = self.LOCATIONS[pass_idx]
+        else:
+            target = self.LOCATIONS[dest_idx]
+
+        # compute distance for all legal movement actions
+        dists = []
+        for action in (self.SOUTH, self.NORTH, self.EAST, self.WEST):
+            nr, nc = self._movement_result(row, col, action)
+            if (nr, nc) == (row, col):
+                # blocked
+                continue
+            dist = self._shortest_path_length((nr, nc), target)
+            dists.append(dist)
+
+        if not dists:
+            return False
+
+        best = min(dists)
+        # second best (or worst) — find any move that produces a detour >= thr
+        for dist in dists:
+            if dist - best >= self.DIVERGENCE_DETOUR_THRESHOLD:
                 return True
         return False
 
@@ -333,22 +412,21 @@ class TaxiCriticalStates:
         """
         if self.is_pickup_possible(state):
             return "PICKUP_ZONE"
-        if self.is_dropoff_possible(state):
+        elif self.is_dropoff_possible(state):
             return "DROPOFF_ZONE"
-        if agent is not None and self.is_high_uncertainty(state, agent):
+        elif agent is not None and self.is_high_uncertainty(state, agent):
             return "HIGH_UNCERTAINTY"
-        if self.is_one_step_away(state):
+        elif self.is_one_step_away(state):
             return "ONE_STEP_AWAY"
-        if self.is_alignment_turning(state):
+        elif self.is_alignment_turning(state):
             return "ALIGNMENT_TURNING"
-        if self.is_bottleneck(state):
+        elif self.is_bottleneck(state):
             return "BOTTLENECK"
-
-        row, col, _, _ = self.decode(state)
-        if self.is_at_any_landmark(row, col):
-            return "LANDMARK"
-
-        return "NORMAL"
+        else:
+            row, col, _, _ = self.decode(state)
+            if self.is_at_any_landmark(row, col):
+                return "LANDMARK"
+            return "NORMAL"
 
     # ─── Importance score (scale-normalised) ─────────────────────────────────
 

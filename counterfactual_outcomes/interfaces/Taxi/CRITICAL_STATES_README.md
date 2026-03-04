@@ -137,10 +137,11 @@ The main categorization method. Returns a label depending on what's going on in 
 |---|---|
 | `"PICKUP_ZONE"` | Taxi is at the passenger's location and the passenger is waiting |
 | `"DROPOFF_ZONE"` | Taxi is at the destination with the passenger on board |
-| `"ONE_STEP_AWAY"` | Taxi is exactly one step from target and next valid move lands on target |
-| `"BOTTLENECK"` | Taxi is on one of the key transit tiles in the row-2 corridor: `(2,0)`, `(2,1)`, `(2,2)`, or `(2,3)` |
 | `"HIGH_UNCERTAINTY"`| PPO agent action probabilities are very close (requires passing `agent`) |
+| `"ONE_STEP_AWAY"` | Taxi is exactly one step from target and next valid move lands on target |
 | `"ALIGNMENT_TURNING"`| Taxi shares row/col with target but wall forces a 90-degree detour |
+| `"DIVERGENCE_POINT"` | State where a wrong movement choice causes a large simulated detour to the target |
+| `"CHOKEPOINT"` | Taxi is on one of the key transit tiles in the row-2 corridor: `(2,0)`, `(2,1)`, `(2,2)`, or `(2,3)` |
 | `"LANDMARK"` | Taxi is at one of the landmarks but none of the above apply |
 | `"NORMAL"` | Everything else |
 
