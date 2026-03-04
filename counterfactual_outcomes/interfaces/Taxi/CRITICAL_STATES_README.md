@@ -130,6 +130,21 @@ Returns `True` if the taxi shares a row/col with the target, but a wall interrup
 
 ---
 
+#### `is_divergence_point(state) → bool`
+Detects states where choosing the wrong movement direction creates a large
+detour to the active target. The implementation simulates each legal movement
+from the current taxi cell, computes the shortest-path length from the
+resulting cell to the target (via `_shortest_path_length` which respects walls
+and boundaries), and compares distances. If any legal action increases the
+distance by at least `DIVERGENCE_DETOUR_THRESHOLD` (default `2`) relative to
+the best available move, the state is flagged as a divergence point.
+
+If the BFS cannot reach the target from a simulated successor cell the
+shortest-path helper returns the sentinel `10**6`, which will count as a very
+large detour when evaluating divergence.
+
+---
+
 #### `get_criticality_category(state, agent=None) → str`
 The main categorization method. Returns a label depending on what's going on in the state:
 
@@ -156,12 +171,18 @@ cs.get_criticality_category(123)  # → "NORMAL"
 Computes a numeric score for how important a state is. Higher means more critical — this is what gets used for ranking which states to highlight in the visualization.
 
 **How the score works:**
-1. **+5.0** if the agent can do a successful pickup or dropoff here.
-2. **+3.0** if the taxi is one step away from the target location.
-3. **+2.0** if the taxi is at a bottleneck chokepoint.
-4. **+1.5** if the taxi is aligned with the target but a wall forces a turning detour.
-5. **+0.5** if the taxi is at a landmark (and none of the above are true).
-6. **+uncertainty** (up to +2.0) if an agent is provided — this rewards states where the agent is highly uncertain (a small gap between best and second-best action value for PPO, or inverted scaled regret for DQN). A higher uncertainty score means the state is a critical decision boundary.
+1. **Base structural contribution (prioritised):** exactly one structural bucket contributes using strict precedence — the first matching category yields the base score and lower-priority structural bonuses are ignored.
+    - `PICKUP_ZONE` / `DROPOFF_ZONE`: **+5.0**
+    - `ONE_STEP_AWAY`: **+3.0**
+    - `BOTTLENECK`: **+2.0**
+    - `ALIGNMENT_TURNING`: **+1.5**
+    - `LANDMARK` (when none of the above): **+0.5**
+2. **Agent-derived signal (added on top):** an uncertainty/regret measure in `[0,1]` is computed from the agent's `get_state_action_values(state)` output and scaled by `2.0`, so agent contributions are in `[0,2.0]`.
+
+    - For PPO-like probability outputs (non-negative and summing ≈1): `normalised = 1 - (top1 - top2)` (small gap → high uncertainty → larger contribution).
+    - For Q-value outputs (DQN): compute a stable scaled regret `regret = (top1 - top2) / (|top1| + |top2| + eps)` and use `normalised = 1 - clip(regret, 0, 1)`.
+
+Total score = (single highest-priority structural base) + (agent normalised × 2.0).
 
 | Parameter | Type | Description |
 |---|---|---|
