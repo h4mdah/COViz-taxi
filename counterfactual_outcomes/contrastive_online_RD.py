@@ -154,9 +154,27 @@ def online_comparison_RD(env1, agent1, env2, agent2, args, evaluation1=None, eva
                         rd_val = None
                     contra_rd_list.append(rd_val)
             contra_traj.RD_vals = contra_rd_list
+            # Compute per-step scalar RD for actions taken in the contrastive trajectory
+            contra_scalar = []
+            for i in range(len(contra_traj.rewards)):
+                prev_idx = i - 1
+                rd_vec = None
+                if prev_idx >= 0 and prev_idx < len(contra_traj.RD_vals):
+                    rd_vec = contra_traj.RD_vals[prev_idx]
+                # action that produced this reward
+                act = contra_traj.actions[i] if i < len(contra_traj.actions) else None
+                if rd_vec is not None and act is not None:
+                    try:
+                        contra_scalar.append(rd_vec[int(act)])
+                    except Exception:
+                        contra_scalar.append(None)
+                else:
+                    contra_scalar.append(None)
+            contra_traj.RD_taken = contra_scalar
         except Exception:
             # best-effort: if anything fails, leave RD_vals unset
             contra_traj.RD_vals = None
+            contra_traj.RD_taken = None
         # we do not call post_contrastive here; env2 has been consumed by contra_traj
 
         # 3) Continue original (env1) until episode end — record true future
@@ -218,6 +236,24 @@ def online_comparison_RD(env1, agent1, env2, agent2, args, evaluation1=None, eva
 
         """end of episode"""
         trace.RD_vals = trace_rd_vals
+        # Post-process to compute per-step scalar RD aligned with rewards:
+        try:
+            rd_taken = []
+            for i in range(len(trace.rewards)):
+                prev_idx = i - 1
+                rd_vec = trace.RD_vals[prev_idx] if (prev_idx >= 0 and prev_idx < len(trace.RD_vals)) else None
+                act = trace.previous_actions[i] if i < len(trace.previous_actions) else None
+                if rd_vec is not None and act is not None:
+                    try:
+                        rd_taken.append(rd_vec[int(act)])
+                    except Exception:
+                        rd_taken.append(None)
+                else:
+                    rd_taken.append(None)
+            trace.RD_taken = rd_taken
+        except Exception:
+            trace.RD_taken = None
+
         traces.append(trace)
         rd_values.append(trace_rd_vals)
     

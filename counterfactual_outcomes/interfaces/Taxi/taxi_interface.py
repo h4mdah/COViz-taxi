@@ -22,6 +22,9 @@ try:
 except ImportError:
     PPO, Memory = None, None
 
+# SB3 adapter
+from counterfactual_outcomes.interfaces.Taxi.sb3_adapter import make_sb3_adapter, load_model, train_model
+
 class MyEvaluation(Evaluation):
     def __init__(self, env, agent, output_dir='../agents', num_episodes=1000, display_env=False):
         self.OUTPUT_FOLDER = output_dir
@@ -115,73 +118,41 @@ class TaxiInterface(AbstractInterface):
             else:
                 agent = None
         except Exception:
-            # fallback: try to load a Stable-Baselines3 DQN model from model_dir
+            # fallback: try to load a Stable-Baselines3 model (DQN or PPO) or custom PPO
             agent = None
-            if not use_ppo:
-                try:
-                    from stable_baselines3 import DQN
-                    model_dir = config.get('model_dir') or self.load_path or 'agents\\taxi_sb3'
-                    # find latest .zip model in model_dir
-                    model_files = sorted(glob.glob(join(model_dir, '*.zip')), key=os.path.getmtime, reverse=True)
-                    
-                    if not model_files and config.get('train_if_missing', True):
-                        print(f"No model found in {model_dir}. Starting training...")
-                        try:
-                            self.train(
-                                env_id=config.get('env', {}).get('id', 'Taxi-v3-COViz'),
-                                total_timesteps=config.get('train_steps', 100_000),
-                                model_dir=model_dir
-                            )
-                            # Refresh file list after training
-                            model_files = sorted(glob.glob(join(model_dir, '*.zip')), key=os.path.getmtime, reverse=True)
-                        except Exception as train_err:
-                            print(f"Training failed: {train_err}")
-    
-                    if model_files:
-                        print("Loaded model files:", model_files[0])
-                        sb3_model = DQN.load(model_files[0])
-    
-                        class SB3Adapter:
-                            def __init__(self, model, action_space):
-                                self.model = model
-                                self.action_space = action_space
-                                self.previous_state = None
-    
-                            def act(self, state):
-                                # SB3 expects numpy observation; leave to model.predict to handle
-                                a, _ = self.model.predict(state, deterministic=True)
-                                return int(a)
-    
-                            def get_state_action_values(self, state):
-                                # SB3 DQN does not expose Q-values easily; provide a placeholder
-                                # vector of zeros with correct length. This lets the pipeline run
-                                # though importance scores will be approximate.
-                                import numpy as _np
-                                n = getattr(self.action_space, 'n', None) or 0
-                                return _np.zeros((n,))
-    
-                            # Minimal APIs expected by rl_agents Evaluation
-                            def set_writer(self, writer):
-                                self.writer = writer
-    
-                            def close(self):
-                                return
-                            
-                            def load(self, filename=None):
-                                # SB3 model already loaded; return the underlying model
-                                return self.model
-    
-                            def save(self, filename=None):
-                                # Attempt to save underlying SB3 model if supported; otherwise no-op
-                                try:
-                                    if hasattr(self.model, 'save'):
-                                        self.model.save(str(filename))
-                                except Exception:
-                                    pass
-    
-                        agent = SB3Adapter(sb3_model, env.action_space)
-                except Exception:
-                    agent = None
+            try:
+                model_dir = config.get('model_dir') or self.load_path or 'agents\\taxi_sb3'
+                # find latest model files (.zip preferred, but we will accept .zip/.pth/.pt)
+                model_files = []
+                for ext in ('*.zip', '*.pth', '*.pt'):
+                    model_files.extend(sorted(glob.glob(join(model_dir, ext)), key=os.path.getmtime, reverse=True))
+
+                if not model_files and config.get('train_if_missing', True):
+                    algo_to_train = 'PPO' if use_ppo else 'DQN'
+                    print(f"No model found in {model_dir}. Starting training ({algo_to_train})...")
+                    try:
+                        train_model(
+                            env_id=config.get('env', {}).get('id', 'Taxi-v3-COViz'),
+                            total_timesteps=config.get('train_steps', 100_000),
+                            model_dir=model_dir,
+                            algo=algo_to_train
+                        )
+                        # Refresh file list after training
+                        model_files = []
+                        for ext in ('*.zip', '*.pth', '*.pt'):
+                            model_files.extend(sorted(glob.glob(join(model_dir, ext)), key=os.path.getmtime, reverse=True))
+                    except Exception as train_err:
+                        print(f"Training failed: {train_err}")
+
+                if model_files:
+                    print("Loaded model files:", model_files[0])
+                    try:
+                        agent = load_model(model_files[0], env.action_space, config=config)
+                    except Exception as e:
+                        print(f"Failed to wrap model with SB3Adapter: {e}")
+                        agent = None
+            except Exception:
+                agent = None
 
         # Try to load custom PPO model if no agent yet
         if agent is None and PPO is not None and use_ppo:
@@ -191,7 +162,7 @@ class TaxiInterface(AbstractInterface):
              if not model_files and config.get('train_if_missing', True):
                 print(f"No PPO model found in {model_dir}. Starting PPO training...")
                 try:
-                    self.train(
+                    train_model(
                         env_id=config.get('env', {}).get('id', 'Taxi-v3-COViz'),
                         total_timesteps=config.get('train_steps', 100_000),
                         model_dir=model_dir,
@@ -203,76 +174,11 @@ class TaxiInterface(AbstractInterface):
 
              if model_files:
                 print("Loaded PPO model:", model_files[0])
-                state_dim = env.observation_space.n if isinstance(env.observation_space, gym.spaces.Discrete) else env.observation_space.shape[0]
-                # specific for taxi discrete obs -> need encoding or separate handling?
-                # The PPO implementation expects vector input. Taxi gives integer state (0..499).
-                # We need an embedding or one-hot encoding for the PPO actor if we want to use the MLP.
-                # For now, let's assume we use one-hot encoding wrapper or modify the agent adapter to one-hot encode.
-                
-                # However, the PPO we ported expects `state_dim` as input size for Linear layer.
-                # We will one-hot encode the discrete state 500 -> 500.
-                state_dim = 500 
-                action_dim = env.action_space.n
-                
-                ppo_conf = {
-                    'lr': 0.002,
-                    'betas': (0.9, 0.999),
-                    'gamma': 0.99,
-                    'eps_clip': 0.2,
-                    'K_epochs': 4,
-                    'nn_type': 'tanh',
-                    'action_std': 0.6, # ignored for discrete
-                    'lam_a': 0.0,
-                    'normalize_rewards': False
-                }
-                
-                ppo_agent = PPO(state_dim, action_dim, ppo_conf, use_gpu=True, is_continuous=False)
-                ppo_agent.policy.load_state_dict(importlib.import_module('torch').load(model_files[0]))
-                ppo_agent.policy.eval()
-                
-                class PPOAdapter:
-                    def __init__(self, ppo, action_space):
-                        self.ppo = ppo
-                        self.action_space = action_space
-                        self.previous_state = None
-                        self.device = ppo.device
-                        self.import_torch = importlib.import_module('torch') # lazy import to avoid global dependency if not used
-
-                    def act(self, state):
-                        # State is int (0..499), convert to one-hot tensor
-                        state_vec = np.zeros(500)
-                        if isinstance(state, (int, np.integer)):
-                             state_vec[state] = 1.0
-                        else:
-                             # fallback if state is not int
-                             pass
-                        
-                        return self.ppo.select_action(state_vec, greedy=True)
-
-                    def get_state_action_values(self, state):
-                        state_vec = np.zeros(500)
-                        if isinstance(state, (int, np.integer)):
-                             state_vec[state] = 1.0
-                        
-                        state_tensor = self.import_torch.FloatTensor(state_vec.reshape(1, -1)).to(self.device)
-                        # Evaluate to get action probs
-                        with self.import_torch.no_grad():
-                            action_probs = self.ppo.policy.actor(state_tensor)
-                            # if output is not softmaxed (it IS softmaxed in our Actor for discrete), we are good.
-                            # Actor ending for discrete is nn.Softmax(dim=-1)
-                        
-                        return action_probs.cpu().data.numpy().flatten()
-                        
-                    def set_writer(self, writer):
-                        pass
-                    def close(self):
-                        pass
-                    def load(self, filename=None):
-                        pass
-                    def save(self, filename=None):
-                        pass
-
-                agent = PPOAdapter(ppo_agent, env.action_space)
+                try:
+                    agent = load_model(model_files[0], env.action_space, config=config)
+                except Exception as e:
+                    print(f"Failed to load custom PPO as adapter: {e}")
+                    agent = None
 
         if agent is None:
             # Provide a helpful error rather than re-raising a suppressed exception
@@ -300,83 +206,6 @@ class TaxiInterface(AbstractInterface):
         evaluation.load_agent_model(agent_path)
         return evaluation
 
-    def train(self, env_id="Taxi-v3-COViz", total_timesteps=100_000, model_dir="agents/taxi_sb3", algo="DQN"):
-        """Train a model for the Taxi environment."""
-        from pathlib import Path
-        model_path_dir = Path(model_dir)
-        model_path_dir.mkdir(parents=True, exist_ok=True)
-        
-        train_env = gym.make(env_id)
-        
-        if algo == "PPO":
-            import torch
-            print(f"Starting PPO training on {env_id} for {total_timesteps} steps...")
-            
-            state_dim = 500 # Taxi
-            action_dim = train_env.action_space.n
-            ppo_conf = {
-                'lr': 0.002,
-                'betas': (0.9, 0.999),
-                'gamma': 0.99,
-                'eps_clip': 0.2,
-                'K_epochs': 4,
-                'nn_type': 'tanh',
-                'action_std': 0.6,
-                'lam_a': 0.0,
-                'normalize_rewards': False
-            }
-            ppo_agent = PPO(state_dim, action_dim, ppo_conf, use_gpu=True, is_continuous=False)
-            memory = Memory()
-            
-            max_ep_len = 200 # Taxi default
-            update_timestep = 2000 
-            time_step = 0
-            
-            # Training Loop
-            for i_episode in range(1, total_timesteps // max_ep_len + 1):
-                state, _ = train_env.reset()
-                for t in range(max_ep_len):
-                    time_step += 1
-                    
-                    # One-hot encode state
-                    state_vec = np.zeros(500)
-                    state_vec[state] = 1.0
-                    
-                    action = ppo_agent.select_action(state_vec, memory)
-                    state, reward, done, truncated, _ = train_env.step(action)
-                    
-                    memory.rewards.append(reward)
-                    memory.is_terminals.append(done or truncated)
-                    
-                    if time_step % update_timestep == 0:
-                        ppo_agent.update(memory)
-                        memory.clear_memory()
-                        time_step = 0
-                    
-                    if done or truncated:
-                        break
-                
-                if i_episode % 100 == 0:
-                     print(f"Episode {i_episode} complete")
-
-            final_model = model_path_dir / "model_final.pth"
-            torch.save(ppo_agent.policy.state_dict(), str(final_model))
-        else:
-            import time
-            from stable_baselines3 import DQN
-            
-            model = DQN("MlpPolicy", train_env, verbose=1)
-            
-            print(f"Starting training on {env_id} for {total_timesteps} steps...")
-            model.learn(total_timesteps=total_timesteps)
-            
-            final_model = model_path_dir / "model_final.zip"
-            model.save(str(final_model))
-            
-        print(f"Training finished. Final model saved to {final_model}")
-        train_env.close()
-        return final_model
-    
     def get_state_action_values(self, agent, state):
         return agent.get_state_action_values(state)
     
@@ -608,6 +437,11 @@ class TaxiTrace(Trace):
     def update(self, state_object, obs, r, done, infos, a, state_id):
         self.obs.append(obs)
         self.rewards.append(r)
+        # placeholder for per-step scalar RD aligned with rewards
+        try:
+            self.RD_taken.append(None)
+        except Exception:
+            self.RD_taken = [None] * (len(self.rewards) - 1) + [None]
         self.dones.append(done)
         self.infos.append(infos)
         self.previous_actions.append(a)

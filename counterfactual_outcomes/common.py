@@ -18,6 +18,9 @@ class Trace(object):
         self.obs = []
         self.previous_actions = []
         self.rewards = []
+        # per-step scalar RD for the action that produced the reward
+        # aligned with `rewards` (same length)
+        self.RD_taken = []
         self.dones = []
         self.infos = []
         self.reward_sum = 0
@@ -31,6 +34,9 @@ class Trace(object):
     def update(self, obs, r, done, infos, a, state_id):
         self.obs.append(obs)
         self.rewards.append(r)
+        # placeholder for RD scalar; will be filled by caller once the
+        # RD-vector for the previous state and the taken action are known.
+        self.RD_taken.append(None)
         self.dones.append(done)
         self.infos.append(infos)
         self.previous_actions.append(a)
@@ -385,6 +391,9 @@ def _dict_to_trace(o):
     # preserve RD_vals if present
     if 'RD_vals' in o:
         tr.RD_vals = o.get('RD_vals')
+    # preserve RD_taken if present (per-step scalar RD aligned with rewards)
+    if 'RD_taken' in o:
+        tr.RD_taken = o.get('RD_taken') or []
 
     return tr
 
