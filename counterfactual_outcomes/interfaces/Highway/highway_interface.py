@@ -103,6 +103,18 @@ class HighwayInterface(AbstractInterface):
     def pre_contrastive(self, env):
         return deepcopy(env)
 
+    def get_counterfactual_action(self, agent, obs, state_values=None):
+        """Original COViz logic: pick the action with the 2nd-highest
+        state-action value.
+
+        From https://github.com/yotamitai/COViz contrastive_online.py:
+            agent2_a = sorted(list(enumerate(s_a_values)), key=lambda x: x[1])[-2][0]
+        """
+        if state_values is None:
+            state = self.get_state_from_obs(agent, obs)
+            state_values = self.get_state_action_values(agent, state)
+        return sorted(list(enumerate(state_values)), key=lambda x: x[1])[-2][0]
+
     def post_contrastive(self, agent1, agent2, pre_params=None):
         env = pre_params
         agent2.previous_state = agent1.previous_state
@@ -149,7 +161,11 @@ class HighwayTrace(Trace):
         marked_frame = np.ascontiguousarray(marked_frame, dtype=np.uint8)
         cv2.rectangle(marked_frame, top_left, bottom_right, color, thickness)
         # add text
-        font = ImageFont.truetype('Roboto-Regular.ttf', 20)
+        try:
+            font_path = str(REPO_ROOT / 'counterfactual_outcomes' / 'Roboto-Regular.ttf')
+            font = ImageFont.truetype(font_path, 20)
+        except Exception:
+            font = ImageFont.load_default()
         image = Image.fromarray(marked_frame, 'RGB')
         draw = ImageDraw.Draw(image)
         draw.text((10, 10), "Contrastive State", (0), font=font)
