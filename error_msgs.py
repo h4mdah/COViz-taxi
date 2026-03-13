@@ -1,60 +1,77 @@
-[13:59:36.703] remote.SSH.remotePlatform = {"HM_593":"linux","HM_New":"linux","HM_Contra":"linux"}
-[13:59:36.704] remote.SSH.path = 
-[13:59:36.704] remote.SSH.configFile = C:\Users\MAHA164\.ssh\config
-[13:59:36.704] remote.SSH.useFlock = true
-[13:59:36.704] remote.SSH.lockfilesInTmp = false
-[13:59:36.705] remote.SSH.localServerDownload = auto
-[13:59:36.705] remote.SSH.remoteServerListenOnSocket = false
-[13:59:36.705] remote.SSH.defaultExtensions = []
-[13:59:36.705] remote.SSH.defaultExtensionsIfInstalledLocally = []
-[13:59:36.705] remote.SSH.loglevel = 2
-[13:59:36.705] remote.SSH.enableDynamicForwarding = true
-[13:59:36.705] remote.SSH.enableRemoteCommand = false
-[13:59:36.706] remote.SSH.serverPickPortsFromRange = {}
-[13:59:36.707] remote.SSH.serverInstallPath = {}
-[13:59:36.707] remote.SSH.permitPtyAllocation = false
-[13:59:36.708] remote.SSH.preferredLocalPortRange = undefined
-[13:59:36.708] remote.SSH.useCurlAndWgetConfigurationFiles = false
-[13:59:36.708] remote.SSH.experimental.chat = true
-[13:59:36.708] remote.SSH.experimental.enhancedSessionLogs = true
-[13:59:36.708] remote.SSH.httpProxy = {"*":"127.0.0.1"}
-[13:59:36.708] remote.SSH.httpsProxy = {"*":""}
-[13:59:36.749] SSH Resolver called for host: HM_593
-[13:59:36.750] Setting up SSH remote "HM_593"
-[13:59:36.774] Resolver error: Error: [UriError]: Scheme is missing: {scheme: "", authority: "", path: "127.0.0.1", query: "", fragment: ""}
-    at K2 (file:///c:/Program%20Files/Microsoft%20VS%20Code/bdd88df003/resources/app/out/vs/workbench/api/node/extensionHostProcess.js:28:55767)
-    at new e1 (file:///c:/Program%20Files/Microsoft%20VS%20Code/bdd88df003/resources/app/out/vs/workbench/api/node/extensionHostProcess.js:28:57202)
-    at new ac (file:///c:/Program%20Files/Microsoft%20VS%20Code/bdd88df003/resources/app/out/vs/workbench/api/node/extensionHostProcess.js:28:58924)
-    at e1.parse (file:///c:/Program%20Files/Microsoft%20VS%20Code/bdd88df003/resources/app/out/vs/workbench/api/node/extensionHostProcess.js:28:57703)
-    at t (c:\Users\MAHA164\.vscode\extensions\ms-vscode-remote.remote-ssh-0.122.0\out\extension.js:2:728380)
-    at t.getProxyUrlsForHost (c:\Users\MAHA164\.vscode\extensions\ms-vscode-remote.remote-ssh-0.122.0\out\extension.js:2:728599)
-    at F (c:\Users\MAHA164\.vscode\extensions\ms-vscode-remote.remote-ssh-0.122.0\out\extension.js:2:823945)
-    at A (c:\Users\MAHA164\.vscode\extensions\ms-vscode-remote.remote-ssh-0.122.0\out\extension.js:2:821674)
-    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
-    at async t.resolve (c:\Users\MAHA164\.vscode\extensions\ms-vscode-remote.remote-ssh-0.122.0\out\extension.js:2:825858)
-    at async c:\Users\MAHA164\.vscode\extensions\ms-vscode-remote.remote-ssh-0.122.0\out\extension.js:2:1117225
-[13:59:36.782] ------
+def initiate(self, seed=0, evaluation_reset=False):
+        config = self.config
+        env = gym.make(config["counterfactual_params"]['env']['id'], render_mode='rgb_array')
+        # gym/gymnasium seeding differs between versions and wrappers.
+        # Try several approaches so this works with older gym, gymnasium, and custom wrappers.
+        try:
+            if hasattr(env, 'seed') and callable(getattr(env, 'seed')):
+                env.seed(seed)
+        except Exception:
+            pass
+        try:
+            # gymnasium: reset accepts seed kwarg
+            if hasattr(env, 'reset'):
+                try:
+                    env.reset(seed=seed)
+                except TypeError:
+                    # some env.reset don't accept seed kwarg
+                    pass
+        except Exception:
+            pass
+        # seed action/observation spaces if available
+        try:
+            if hasattr(env, 'action_space') and hasattr(env.action_space, 'seed'):
+                env.action_space.seed(seed)
+        except Exception:
+            pass
+        try:
+            if hasattr(env, 'observation_space') and hasattr(env.observation_space, 'seed'):
+                env.observation_space.seed(seed)
+        except Exception:
+            pass
+        algo = config["counterfactual_params"]["algorithm"]
+        agent = None
+        try:
+            model_dir = config["counterfactual_params"]['model_dir'] or self.load_path or 'agents/taxi_sb3'
+            # find latest .zip model in model_dir
+            model_files=[]
+            for ext in ('*.zip', '*.pth', '*.pt'):
+                model_files.extend(sorted(glob.glob(join(model_dir, ext)), key=os.path.getmtime, reverse=True))
+            # Ensure the directory exists
+            print(f"model file path {model_files[-1]}")
 
+            if model_files:
+                framework = config["counterfactual_params"]["framework"]
+                AdapterClass = {
+                    "SB3": StableBaselines3Adapter,
+                    "rllib": RllibAdapter
+                }
+                print("after")
+                framework_adapter = AdapterClass.get(framework)
+                if not framework_adapter:
+                    raise ValueError(f"Unknown/unimplemented framework: {framework}")
+                agent = StableBaselines3Adapter(config, config["counterfactual_params"], config["xrl_config"])
+                config["counterfactual_params"]["model_file"] = model_files[-1] # add model file path to the config file
+                agent.load_model(model_files[-1])
+        except Exception:
+            agent = None
 
-
-
-[13:59:36.783]  ---------- [Session Summary] ----------- 
-[13:59:36.783] [InvalidProxyUrl]: Proxy URL in settings is invalid (Provided URL '127.0.0.1' resulted in Error: [UriError]: Scheme is missing: {scheme: "", authority: "", path: "127.0.0.1", query: "", fragment: ""})
-[13:59:36.783]  ---------------------------------------- 
-[13:59:42.598] Opening exec server for ssh-remote+7b22686f73744e616d65223a22484d5f353933227d
-[13:59:45.567] Opening exec server for ssh-remote+7b22686f73744e616d65223a22484d5f353933227d
-[13:59:47.478] Initizing new exec server for ssh-remote+7b22686f73744e616d65223a22484d5f353933227d
-[13:59:47.480] Exec server for ssh-remote+7b22686f73744e616d65223a22484d5f353933227d failed: Error: [UriError]: Scheme is missing: {scheme: "", authority: "", path: "127.0.0.1", query: "", fragment: ""}
-[13:59:47.480] Error opening exec server for ssh-remote+7b22686f73744e616d65223a22484d5f353933227d: Error: [UriError]: Scheme is missing: {scheme: "", authority: "", path: "127.0.0.1", query: "", fragment: ""}
-[13:59:47.481]  ---------- [Session Summary] ----------- 
-[13:59:47.481] [InvalidProxyUrl]: Proxy URL in settings is invalid (Provided URL '127.0.0.1' resulted in Error: [UriError]: Scheme is missing: {scheme: "", authority: "", path: "127.0.0.1", query: "", fragment: ""})
-[13:59:47.481] [InvalidProxyUrl]: Proxy URL in settings is invalid (Provided URL '127.0.0.1' resulted in Error: [UriError]: Scheme is missing: {scheme: "", authority: "", path: "127.0.0.1", query: "", fragment: ""})
-[13:59:47.481]  ---------------------------------------- 
-[13:59:47.491] Initizing new exec server for ssh-remote+7b22686f73744e616d65223a22484d5f353933227d
-[13:59:47.493] Exec server for ssh-remote+7b22686f73744e616d65223a22484d5f353933227d failed: Error: [UriError]: Scheme is missing: {scheme: "", authority: "", path: "127.0.0.1", query: "", fragment: ""}
-[13:59:47.493] Error opening exec server for ssh-remote+7b22686f73744e616d65223a22484d5f353933227d: Error: [UriError]: Scheme is missing: {scheme: "", authority: "", path: "127.0.0.1", query: "", fragment: ""}
-[13:59:47.493]  ---------- [Session Summary] ----------- 
-[13:59:47.494] [InvalidProxyUrl]: Proxy URL in settings is invalid (Provided URL '127.0.0.1' resulted in Error: [UriError]: Scheme is missing: {scheme: "", authority: "", path: "127.0.0.1", query: "", fragment: ""})
-[13:59:47.494] [InvalidProxyUrl]: Proxy URL in settings is invalid (Provided URL '127.0.0.1' resulted in Error: [UriError]: Scheme is missing: {scheme: "", authority: "", path: "127.0.0.1", query: "", fragment: ""})
-[13:59:47.494] [InvalidProxyUrl]: Proxy URL in settings is invalid (Provided URL '127.0.0.1' resulted in Error: [UriError]: Scheme is missing: {scheme: "", authority: "", path: "127.0.0.1", query: "", fragment: ""})
-[13:59:47.494]  ---------------------------------------- 
+        if agent is None:
+            # Provide a helpful error rather than re-raising a suppressed exception
+            msg = (
+                "No Stable-Baselines3 "
+                "model could be loaded.\n"
+                "Ensure your agent metadata contains an 'agent' section that understands,\n"
+                "or place a SB3 .zip model in the folder pointed to by 'model_dir' or 'self.load_path'.\n"
+                f"Tried model_dir='{config.get('model_dir')}', load_path='{self.load_path}'."
+            )
+            raise RuntimeError(msg)
+        if evaluation_reset:
+            evaluation_reset.training = False
+            evaluation_reset.close()
+        try:
+            self.env = env
+        except Exception:
+            pass
+        return env, agent
+    
